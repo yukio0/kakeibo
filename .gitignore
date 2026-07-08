@@ -39,4 +39,19 @@ out/
 ### Kotlin ###
 .kotlin
 
+### Node.js / frontend ###
+node_modules/
+dist/
+coverage/
+
+### Playwright ###
+test-results/
+playwright-report/
+blob-report/
+
+### Local environment ###
+.env
+.env.*
+!.env.example
+
 docs/
