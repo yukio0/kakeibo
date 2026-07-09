@@ -8,4 +8,6 @@ interface TransactionRepository : JpaRepository<TransactionEntity, Long> {
     startDate: LocalDate,
     endDateExclusive: LocalDate,
   ): List<TransactionEntity>
+
+  fun existsByCategoryId(categoryId: Long): Boolean
 }

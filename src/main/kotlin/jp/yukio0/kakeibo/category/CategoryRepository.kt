@@ -6,5 +6,9 @@ import org.springframework.data.jpa.repository.JpaRepository
 interface CategoryRepository : JpaRepository<CategoryEntity, Long> {
   fun findAllByOrderByTypeAscDisplayOrderAscIdAsc(): List<CategoryEntity>
 
+  fun findByNameAndType(name: String, type: TransactionType): CategoryEntity?
+
   fun existsByNameAndType(name: String, type: TransactionType): Boolean
+
+  fun existsByNameAndTypeAndIdNot(name: String, type: TransactionType, id: Long): Boolean
 }
