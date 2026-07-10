@@ -1,4 +1,4 @@
-import { apiRequest, clearCsrfToken } from './http'
+import { ApiError, apiRequest, clearCsrfToken } from './http'
 
 export type TransactionType = 'EXPENSE' | 'INCOME' | 'TRANSFER'
 export type CategoryType = Exclude<TransactionType, 'TRANSFER'>
@@ -293,6 +293,18 @@ export function deleteTransferAccount(id: number): Promise<void> {
 
 export function getTransactions(year: number, month: number): Promise<Transaction[]> {
   return apiRequest<Transaction[]>(`/api/transactions?year=${year}&month=${month}`)
+}
+
+export async function exportMonthlyTransactions(year: number, month: number): Promise<Blob> {
+  const response = await fetch('/api/transactions/export?year=' + year + '&month=' + month, {
+    credentials: 'same-origin',
+  })
+
+  if (!response.ok) {
+    throw new ApiError(response.status, 'CSVの出力に失敗しました')
+  }
+
+  return response.blob()
 }
 
 export function saveMonthlyTransactions(

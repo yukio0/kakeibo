@@ -40,6 +40,13 @@ test('家計簿を1件入力して自動保存後に再表示する', async ({ p
   await expect(savedRow.locator('textarea')).toHaveValue('E2Eテストの支出')
   await expect(savedRow.locator('input[type="number"]')).toHaveValue('1234')
   await saveScreenshot(page, testInfo, 'transaction-reloaded')
+
+  const downloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'CSV出力', exact: true }).click()
+  const download = await downloadPromise
+  await expect(download.suggestedFilename()).toBe(
+    'kakeibo-' + currentLocalDate().slice(0, 7) + '.csv',
+  )
 })
 
 test('金額が未入力の行では金額セルにエラーを表示する', async ({ page }, testInfo) => {

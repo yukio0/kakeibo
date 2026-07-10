@@ -1,6 +1,7 @@
 package jp.yukio0.kakeibo.transaction
 
 import jakarta.validation.Validator
+import java.nio.charset.StandardCharsets
 import java.time.LocalDate
 import jp.yukio0.kakeibo.api.ApiFieldErrorResponse
 import jp.yukio0.kakeibo.api.ApiValidationException
@@ -28,12 +29,33 @@ class TransactionService(
   fun findMonthly(year: Int?, month: Int?): List<TransactionResponse> {
     val monthlyPeriod = MonthlyPeriod.from(year, month)
 
-    return transactionRepository
-      .findAllByTransactionDateGreaterThanEqualAndTransactionDateLessThanOrderByDisplayOrderAscIdAsc(
-        monthlyPeriod.startDate,
-        monthlyPeriod.endDateExclusive,
+    return findMonthlyTransactions(monthlyPeriod).map { it.toResponse() }
+  }
+
+  @Transactional(readOnly = true)
+  fun exportMonthlyCsv(monthlyPeriod: MonthlyPeriod): ByteArray {
+    val rows = findMonthlyTransactions(monthlyPeriod).map { it.toResponse() }
+    val csv = buildString {
+      appendCsvRow(
+        this,
+        listOf("日付", "種別", "カテゴリ・振替元", "支払い方法・振替先", "金額", "メモ"),
       )
-      .map { it.toResponse() }
+      rows.forEach { transaction ->
+        appendCsvRow(
+          this,
+          listOf(
+            transaction.date,
+            transaction.type.toCsvLabel(),
+            transaction.categoryName,
+            transaction.paymentMethodName,
+            transaction.amount.toString(),
+            transaction.memo.orEmpty(),
+          ),
+        )
+      }
+    }
+
+    return csv.toByteArray(StandardCharsets.UTF_8)
   }
 
   @Transactional
@@ -399,6 +421,25 @@ class TransactionService(
 
   private fun LocalDate.isIn(monthlyPeriod: MonthlyPeriod): Boolean =
     !isBefore(monthlyPeriod.startDate) && isBefore(monthlyPeriod.endDateExclusive)
+
+  private fun findMonthlyTransactions(monthlyPeriod: MonthlyPeriod): List<TransactionEntity> =
+    transactionRepository
+      .findAllByTransactionDateGreaterThanEqualAndTransactionDateLessThanOrderByDisplayOrderAscIdAsc(
+        monthlyPeriod.startDate,
+        monthlyPeriod.endDateExclusive,
+      )
+
+  private fun TransactionType.toCsvLabel(): String =
+    when (this) {
+      TransactionType.EXPENSE -> "支出"
+      TransactionType.INCOME -> "収入"
+      TransactionType.TRANSFER -> "振替"
+    }
+
+  private fun appendCsvRow(target: StringBuilder, values: List<String>) {
+    target.append(values.joinToString(",") { value -> "\"" + value.replace("\"", "\"\"") + "\"" })
+    target.append("\r\n")
+  }
 
   private fun CategoryEntity.requiredId(): Long = id ?: error("Category id is not assigned")
 

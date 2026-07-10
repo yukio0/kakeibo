@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ApiError } from '@/api/http'
 import {
+  exportMonthlyTransactions,
   getCategories,
   getMonthlySummary,
   getPaymentMethods,
@@ -73,8 +74,10 @@ const rows = ref<TransactionRow[]>([])
 const persistedSummary = ref<MonthlySummary | null>(null)
 const loading = ref(true)
 const saving = ref(false)
+const exporting = ref(false)
 const loadError = ref<string | null>(null)
 const saveError = ref<string | null>(null)
+const exportError = ref<string | null>(null)
 const rowErrors = reactive<Record<string, TransactionFieldErrors>>({})
 const savedSnapshot = ref('[]')
 const activeCell = ref<ActiveCell | null>(null)
@@ -237,6 +240,35 @@ async function autoSaveMonth(): Promise<void> {
       autoSaveRequested = false
       scheduleAutoSave()
     }
+  }
+}
+
+async function exportCsv(): Promise<void> {
+  if (loading.value || saving.value || exporting.value) {
+    return
+  }
+
+  exportError.value = null
+  if (hasDirtyChanges.value) {
+    await autoSaveMonth()
+    if (hasDirtyChanges.value) {
+      return
+    }
+  }
+
+  exporting.value = true
+  try {
+    const csv = await exportMonthlyTransactions(period.year, period.month)
+    const url = URL.createObjectURL(csv)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = 'kakeibo-' + monthInputValue.value + '.csv'
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    exportError.value = toMessage(error)
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -1024,10 +1056,19 @@ function pad2(value: number): string {
     <div class="toolbar-status">
       <span class="count-badge">{{ periodLabel }}</span>
     </div>
+    <button
+      type="button"
+      class="secondary-button"
+      :disabled="loading || saving || exporting"
+      @click="exportCsv"
+    >
+      {{ exporting ? 'CSV出力中...' : 'CSV出力' }}
+    </button>
   </section>
 
   <p v-if="loadError" class="message error">{{ loadError }}</p>
   <p v-if="saveError" class="message error">{{ saveError }}</p>
+  <p v-if="exportError" class="message error">{{ exportError }}</p>
 
   <section class="category-section">
     <div class="section-heading">

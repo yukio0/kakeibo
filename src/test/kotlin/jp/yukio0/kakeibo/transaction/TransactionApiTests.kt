@@ -7,6 +7,7 @@ import jp.yukio0.kakeibo.domain.TransactionType
 import jp.yukio0.kakeibo.paymentmethod.PaymentMethodEntity
 import jp.yukio0.kakeibo.paymentmethod.PaymentMethodRepository
 import org.hamcrest.Matchers.hasSize
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -16,6 +17,7 @@ import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
@@ -145,6 +147,44 @@ class TransactionApiTests {
       .perform(get("/api/transactions").param("year", "2099").param("month", "1"))
       .andExpect(status().isOk)
       .andExpect(content().json("[]"))
+  }
+
+  @Test
+  fun exportTransactionsReturnsUtf8CsvWithoutBom() {
+    val category =
+      categoryRepository.saveAndFlush(
+        CategoryEntity(
+          name = "CSV出力カテゴリ",
+          type = TransactionType.EXPENSE,
+          displayOrder = 940,
+        )
+      )
+    saveTransaction(
+      category = category,
+      transactionDate = LocalDate.of(2026, 7, 31),
+      amount = 1234,
+      memo = "カンマ, \"引用\"\n改行",
+      displayOrder = 1,
+    )
+
+    val csv =
+      mockMvc
+        .perform(get("/api/transactions/export").param("year", "2026").param("month", "7"))
+        .andExpect(status().isOk)
+        .andExpect(content().contentType(MediaType("text", "csv", Charsets.UTF_8)))
+        .andExpect(
+          header().string("Content-Disposition", "attachment; filename=\"kakeibo-2026-07.csv\"")
+        )
+        .andReturn()
+        .response
+        .contentAsByteArray
+
+    assertEquals('"'.code.toByte(), csv.first())
+    assertEquals(
+      "\"日付\",\"種別\",\"カテゴリ・振替元\",\"支払い方法・振替先\",\"金額\",\"メモ\"\r\n" +
+        "\"2026-07-31\",\"支出\",\"CSV出力カテゴリ\",\"現金\",\"1234\",\"カンマ, \"\"引用\"\"\n改行\"\r\n",
+      String(csv, Charsets.UTF_8),
+    )
   }
 
   @Test
