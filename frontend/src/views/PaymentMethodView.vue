@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { ApiError } from '@/api/http'
 import {
   createPaymentMethod,
   deletePaymentMethod,
@@ -9,287 +7,48 @@ import {
   type PaymentMethodRequest,
   updatePaymentMethod,
 } from '@/api/kakeibo'
+import { useMasterCrud } from '@/composables/useMasterCrud'
+import { compareByDisplayOrder, nextDisplayOrderOf, type MasterForm } from '@/masters'
 
-type PaymentMethodForm = {
-  name: string
-  displayOrder: number
-}
-
-type PaymentMethodField = keyof PaymentMethodForm
-type FieldErrors = Partial<Record<PaymentMethodField, string>>
-
-const AUTO_SAVE_DELAY_MS = 700
-
-const paymentMethods = ref<PaymentMethod[]>([])
-const loading = ref(false)
-const creating = ref(false)
-const savingIds = ref<number[]>([])
-const deletingIds = ref<number[]>([])
-const listError = ref<string | null>(null)
-const successMessage = ref<string | null>(null)
-
-const createForm = reactive<PaymentMethodForm>({
-  name: '',
-  displayOrder: 0,
-})
-const createErrors = ref<FieldErrors>({})
-const editForms = reactive<Record<number, PaymentMethodForm>>({})
-const editErrors = reactive<Record<number, FieldErrors>>({})
-const rowErrors = reactive<Record<number, string>>({})
-const autoSaveTimers = new Map<number, number>()
-
-const hasPaymentMethods = computed(() => paymentMethods.value.length > 0)
-
-onMounted(() => {
-  void loadPaymentMethods()
-})
-
-onBeforeUnmount(() => {
-  autoSaveTimers.forEach((timer) => window.clearTimeout(timer))
-  autoSaveTimers.clear()
-})
-
-async function loadPaymentMethods(): Promise<void> {
-  loading.value = true
-  listError.value = null
-
-  try {
-    paymentMethods.value = sortPaymentMethods(await getPaymentMethods())
-    syncEditForms()
-    createForm.displayOrder = nextDisplayOrder()
-  } catch (error) {
-    listError.value = toMessage(error)
-  } finally {
-    loading.value = false
-  }
-}
-
-async function submitCreate(): Promise<void> {
-  creating.value = true
-  createErrors.value = {}
-  listError.value = null
-  successMessage.value = null
-
-  try {
-    const created = await createPaymentMethod(toRequest(createForm))
-    paymentMethods.value = sortPaymentMethods([...paymentMethods.value, created])
-    syncEditForms()
-    createForm.name = ''
-    createForm.displayOrder = nextDisplayOrder()
-    successMessage.value = '支払い方法を登録しました'
-  } catch (error) {
-    if (error instanceof ApiError) {
-      createErrors.value = toFieldErrors(error)
-    }
-    listError.value = toMessage(error)
-  } finally {
-    creating.value = false
-  }
-}
-
-async function savePaymentMethod(paymentMethod: PaymentMethod): Promise<void> {
-  const form = editForms[paymentMethod.id]
-  if (!form || isDeleting(paymentMethod.id)) {
-    return
-  }
-
-  if (!isDirty(paymentMethod)) {
-    clearPaymentMethodAutoSaveTimer(paymentMethod.id)
-    return
-  }
-
-  if (isSaving(paymentMethod.id)) {
-    schedulePaymentMethodAutoSave(paymentMethod)
-    return
-  }
-
-  clearPaymentMethodAutoSaveTimer(paymentMethod.id)
-  const request = toRequest(form)
-
-  setBusy(savingIds, paymentMethod.id, true)
-  editErrors[paymentMethod.id] = {}
-  delete rowErrors[paymentMethod.id]
-  successMessage.value = null
-
-  try {
-    const updated = await updatePaymentMethod(paymentMethod.id, request)
-    paymentMethods.value = sortPaymentMethods(
-      paymentMethods.value.map((current) => (current.id === updated.id ? updated : current)),
-    )
-    if (isSameRequest(form, request)) {
-      editForms[paymentMethod.id] = toForm(updated)
-    } else {
-      schedulePaymentMethodAutoSave(updated)
-    }
-  } catch (error) {
-    if (!isSameRequest(form, request)) {
-      schedulePaymentMethodAutoSave(paymentMethod)
-    } else if (error instanceof ApiError) {
-      editErrors[paymentMethod.id] = toFieldErrors(error)
-      rowErrors[paymentMethod.id] = toMessage(error)
-    } else {
-      rowErrors[paymentMethod.id] = toMessage(error)
-    }
-  } finally {
-    setBusy(savingIds, paymentMethod.id, false)
-  }
-}
-
-function schedulePaymentMethodAutoSave(paymentMethod: PaymentMethod): void {
-  const currentTimer = autoSaveTimers.get(paymentMethod.id)
-  if (currentTimer !== undefined) {
-    window.clearTimeout(currentTimer)
-  }
-
-  autoSaveTimers.set(
-    paymentMethod.id,
-    window.setTimeout(() => {
-      autoSaveTimers.delete(paymentMethod.id)
-      void savePaymentMethod(paymentMethod)
-    }, AUTO_SAVE_DELAY_MS),
-  )
-}
-
-function clearPaymentMethodAutoSaveTimer(id: number): void {
-  const timer = autoSaveTimers.get(id)
-  if (timer !== undefined) {
-    window.clearTimeout(timer)
-    autoSaveTimers.delete(id)
-  }
-}
-
-async function confirmDelete(paymentMethod: PaymentMethod): Promise<void> {
-  if (paymentMethods.value.length <= 1) {
-    rowErrors[paymentMethod.id] = '支払い方法は最低1件必要です'
-    successMessage.value = null
-    return
-  }
-
-  const confirmed = window.confirm(
-    `支払い方法「${paymentMethod.name}」を削除します。よろしいですか？`,
-  )
-  if (!confirmed) {
-    return
-  }
-
-  setBusy(deletingIds, paymentMethod.id, true)
-  clearPaymentMethodAutoSaveTimer(paymentMethod.id)
-  delete rowErrors[paymentMethod.id]
-  successMessage.value = null
-
-  try {
-    await deletePaymentMethod(paymentMethod.id)
-    paymentMethods.value = paymentMethods.value.filter((current) => current.id !== paymentMethod.id)
-    delete editForms[paymentMethod.id]
-    delete editErrors[paymentMethod.id]
-    clearPaymentMethodAutoSaveTimer(paymentMethod.id)
-    successMessage.value = '支払い方法を削除しました'
-  } catch (error) {
-    rowErrors[paymentMethod.id] = toMessage(error)
-  } finally {
-    setBusy(deletingIds, paymentMethod.id, false)
-  }
-}
-
-function isSaving(id: number): boolean {
-  return savingIds.value.includes(id)
-}
-
-function isDeleting(id: number): boolean {
-  return deletingIds.value.includes(id)
-}
-
-function isDirty(paymentMethod: PaymentMethod): boolean {
-  const form = editForms[paymentMethod.id]
-  return (
-    !!form &&
-    (form.name !== paymentMethod.name || form.displayOrder !== paymentMethod.displayOrder)
-  )
-}
-
-function nextDisplayOrder(): number {
-  const orders = paymentMethods.value.map((paymentMethod) => paymentMethod.displayOrder)
-  return Math.max(-10, ...orders) + 10
-}
-
-function syncEditForms(): void {
-  paymentMethods.value.forEach((paymentMethod) => {
-    editForms[paymentMethod.id] = toForm(paymentMethod)
-    editErrors[paymentMethod.id] = editErrors[paymentMethod.id] ?? {}
-  })
-
-  Object.keys(editForms).forEach((id) => {
-    const paymentMethodId = Number(id)
-    if (!paymentMethods.value.some((paymentMethod) => paymentMethod.id === paymentMethodId)) {
-      delete editForms[paymentMethodId]
-      delete editErrors[paymentMethodId]
-      delete rowErrors[paymentMethodId]
-      clearPaymentMethodAutoSaveTimer(paymentMethodId)
-    }
-  })
-}
-
-function toForm(paymentMethod: PaymentMethod): PaymentMethodForm {
-  return {
+const {
+  items: paymentMethods,
+  loading,
+  creating,
+  listError,
+  successMessage,
+  createForm,
+  createErrors,
+  editForms,
+  editErrors,
+  rowErrors,
+  hasItems,
+  submitCreate,
+  save,
+  scheduleAutoSave,
+  confirmDelete,
+  isSaving,
+  isDeleting,
+} = useMasterCrud<PaymentMethod, MasterForm, PaymentMethodRequest>({
+  list: getPaymentMethods,
+  create: createPaymentMethod,
+  update: updatePaymentMethod,
+  remove: deletePaymentMethod,
+  entityLabel: '支払い方法',
+  minimumRequiredMessage: '支払い方法は最低1件必要です',
+  canDelete: (items) => items.length > 1,
+  fields: ['name', 'displayOrder'],
+  emptyForm: () => ({ name: '', displayOrder: 0 }),
+  toForm: (paymentMethod) => ({
     name: paymentMethod.name,
     displayOrder: paymentMethod.displayOrder,
-  }
-}
-
-function toRequest(form: PaymentMethodForm): PaymentMethodRequest {
-  return {
-    name: form.name.trim(),
-    displayOrder: Number(form.displayOrder),
-  }
-}
-
-function isSameRequest(
-  form: PaymentMethodForm,
-  request: PaymentMethodRequest,
-): boolean {
-  return (
+  }),
+  toRequest: (form) => ({ name: form.name.trim(), displayOrder: Number(form.displayOrder) }),
+  isSameRequest: (form, request) =>
     form.name.trim() === request.name &&
-    Object.is(Number(form.displayOrder), request.displayOrder)
-  )
-}
-
-function toFieldErrors(error: ApiError): FieldErrors {
-  const result: FieldErrors = {}
-  error.errors.forEach((fieldError) => {
-    if (isPaymentMethodField(fieldError.field)) {
-      result[fieldError.field] = fieldError.message
-    }
-  })
-  return result
-}
-
-function toMessage(error: unknown): string {
-  if (error instanceof ApiError) {
-    return error.message
-  }
-  return '通信に失敗しました'
-}
-
-function isPaymentMethodField(field: string): field is PaymentMethodField {
-  return field === 'name' || field === 'displayOrder'
-}
-
-function sortPaymentMethods(items: PaymentMethod[]): PaymentMethod[] {
-  return [...items].sort((left, right) => {
-    const displayOrder = left.displayOrder - right.displayOrder
-    if (displayOrder !== 0) {
-      return displayOrder
-    }
-
-    return left.id - right.id
-  })
-}
-
-function setBusy(target: typeof savingIds, id: number, busy: boolean): void {
-  target.value = busy
-    ? Array.from(new Set([...target.value, id]))
-    : target.value.filter((current) => current !== id)
-}
+    Object.is(Number(form.displayOrder), request.displayOrder),
+  compare: compareByDisplayOrder,
+  nextDisplayOrder: (items) => nextDisplayOrderOf(items),
+})
 </script>
 
 <template>
@@ -305,7 +64,7 @@ function setBusy(target: typeof savingIds, id: number, busy: boolean): void {
       <h2>支払い方法を追加</h2>
     </div>
 
-    <form class="form-grid payment-method-form-grid" @submit.prevent="submitCreate">
+    <form class="form-grid form-grid-compact" @submit.prevent="submitCreate">
       <label class="field">
         <span>支払い方法名</span>
         <input v-model="createForm.name" type="text" autocomplete="off">
@@ -360,8 +119,8 @@ function setBusy(target: typeof savingIds, id: number, busy: boolean): void {
                   v-model="editForms[paymentMethod.id].name"
                   type="text"
                   autocomplete="off"
-                  @input="schedulePaymentMethodAutoSave(paymentMethod)"
-                  @blur="savePaymentMethod(paymentMethod)"
+                  @input="scheduleAutoSave(paymentMethod)"
+                  @blur="save(paymentMethod)"
                 >
                 <small v-if="editErrors[paymentMethod.id]?.name" class="field-error">
                   {{ editErrors[paymentMethod.id]?.name }}
@@ -372,8 +131,8 @@ function setBusy(target: typeof savingIds, id: number, busy: boolean): void {
                   v-model.number="editForms[paymentMethod.id].displayOrder"
                   type="number"
                   min="0"
-                  @input="schedulePaymentMethodAutoSave(paymentMethod)"
-                  @blur="savePaymentMethod(paymentMethod)"
+                  @input="scheduleAutoSave(paymentMethod)"
+                  @blur="save(paymentMethod)"
                 >
                 <small v-if="editErrors[paymentMethod.id]?.displayOrder" class="field-error">
                   {{ editErrors[paymentMethod.id]?.displayOrder }}
@@ -401,7 +160,7 @@ function setBusy(target: typeof savingIds, id: number, busy: boolean): void {
     </div>
   </section>
 
-  <section v-if="!loading && !hasPaymentMethods" class="status-card">
+  <section v-if="!loading && !hasItems" class="status-card">
     <p>支払い方法が未登録です。上のフォームから登録してください。</p>
   </section>
 </template>

@@ -1,6 +1,45 @@
-import { expect, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
+import {
+  expect,
+  type APIRequestContext,
+  type Page,
+  type Response,
+  type TestInfo,
+} from '@playwright/test'
 import { E2E_USER } from './credentials'
 import { generateTotp } from './totp'
+
+export type MonthlySaveRow = {
+  id: number | null
+  date: string | null
+  type: string | null
+  categoryId: number | null
+  paymentMethodId: number | null
+  amount: number | null
+  memo: string | null
+  displayOrder: number
+}
+
+/**
+ * 家計簿の自動保存は入力のたびに700msのデバウンスで走る。
+ * セルを続けて埋めるとデバウンスが途中で発火して、最後の入力を含まないPUTが先に飛ぶ。
+ * 「PUTが成功した」だけを待つと、その先行PUTで解決してしまい、
+ * 直後のリロードで最後の入力が消えたように見える。送信ボディが期待した内容のPUTだけを待つこと。
+ */
+export function waitForMonthlySave(
+  page: Page,
+  matches: (rows: MonthlySaveRow[]) => boolean,
+): Promise<Response> {
+  return page.waitForResponse((response) => {
+    if (!response.url().includes('/api/transactions/monthly')) {
+      return false
+    }
+    if (response.request().method() !== 'PUT' || !response.ok()) {
+      return false
+    }
+
+    return matches(response.request().postDataJSON() as MonthlySaveRow[])
+  })
+}
 
 export async function resetE2eData(request: APIRequestContext): Promise<void> {
   const csrfResponse = await request.get('/api/csrf')

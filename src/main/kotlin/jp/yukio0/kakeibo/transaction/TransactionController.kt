@@ -39,5 +39,5 @@ class TransactionController(private val transactionService: TransactionService) 
     @RequestParam(required = false) year: Int?,
     @RequestParam(required = false) month: Int?,
     @RequestBody requests: List<TransactionMonthlySaveRequest>,
-  ): TransactionMonthlySaveResponse = transactionService.saveMonthly(year, month, requests)
+  ): List<TransactionResponse> = transactionService.saveMonthly(year, month, requests)
 }

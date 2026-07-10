@@ -7,7 +7,7 @@ import org.hibernate.annotations.CreationTimestamp
 import org.hibernate.annotations.UpdateTimestamp
 
 @MappedSuperclass
-abstract class AuditableEntity {
+abstract class AuditableEntity : IdentifiableEntity() {
 
   @field:CreationTimestamp
   @field:Column(name = "created_at", nullable = false, updatable = false)

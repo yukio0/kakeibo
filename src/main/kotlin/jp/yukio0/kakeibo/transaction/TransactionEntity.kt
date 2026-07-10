@@ -5,9 +5,6 @@ import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
-import jakarta.persistence.GeneratedValue
-import jakarta.persistence.GenerationType
-import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
 import jakarta.persistence.Table
@@ -40,10 +37,4 @@ class TransactionEntity(
   @field:Column(nullable = false) var amount: Int,
   @field:Column(length = 500) var memo: String? = null,
   @field:Column(name = "display_order", nullable = false) var displayOrder: Int = 0,
-) : AuditableEntity() {
-
-  @field:Id
-  @field:GeneratedValue(strategy = GenerationType.IDENTITY)
-  var id: Long? = null
-    protected set
-}
+) : AuditableEntity()

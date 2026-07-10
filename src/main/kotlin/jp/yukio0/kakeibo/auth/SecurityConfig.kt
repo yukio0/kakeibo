@@ -3,6 +3,8 @@ package jp.yukio0.kakeibo.auth
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.core.env.Environment
+import org.springframework.core.env.Profiles
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -19,7 +21,10 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository
 
 @Configuration
 @EnableWebSecurity
-class SecurityConfig(private val securityFeatureProperties: SecurityFeatureProperties) {
+class SecurityConfig(
+  private val securityFeatureProperties: SecurityFeatureProperties,
+  private val environment: Environment,
+) {
 
   @Bean fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder()
 
@@ -45,38 +50,43 @@ class SecurityConfig(private val securityFeatureProperties: SecurityFeaturePrope
         securityContext.securityContextRepository(securityContextRepository)
       }
       .authorizeHttpRequests { authorize ->
-        if (securityFeatureProperties.authenticationEnabled) {
-          authorize
-            .requestMatchers(HttpMethod.GET, "/hello", "/api/csrf", "/api/security-settings")
-            .permitAll()
-            .requestMatchers(HttpMethod.POST, "/api/login")
-            .permitAll()
-            .requestMatchers(HttpMethod.POST, "/api/mfa/verify")
-            .permitAll()
-            .requestMatchers(HttpMethod.POST, "/api/e2e/reset")
-            .permitAll()
-            .requestMatchers(
-              HttpMethod.GET,
-              "/",
-              "/index.html",
-              "/login",
-              "/mfa/verify",
-              "/categories",
-              "/mfa/settings",
-              "/payment-methods",
-              "/password",
-              "/transfers",
-              "/trusted-devices",
-              "/assets/**",
-              "/favicon.ico",
-              "/vite.svg",
-            )
-            .permitAll()
-            .anyRequest()
-            .authenticated()
-        } else {
+        if (!securityFeatureProperties.authenticationEnabled) {
           authorize.anyRequest().permitAll()
+          return@authorizeHttpRequests
         }
+
+        authorize
+          .requestMatchers(HttpMethod.GET, "/hello", "/api/csrf", "/api/security-settings")
+          .permitAll()
+          .requestMatchers(HttpMethod.POST, "/api/login")
+          .permitAll()
+          .requestMatchers(HttpMethod.POST, "/api/mfa/verify")
+          .permitAll()
+          .requestMatchers(
+            HttpMethod.GET,
+            "/",
+            "/index.html",
+            "/login",
+            "/mfa/verify",
+            "/categories",
+            "/mfa/settings",
+            "/payment-methods",
+            "/password",
+            "/transfers",
+            "/trusted-devices",
+            "/assets/**",
+            "/favicon.ico",
+            "/vite.svg",
+          )
+          .permitAll()
+
+        // E2eDataController と同じ条件でだけ開ける。プロファイルの有無と許可がずれると、
+        // 全データを消して既知の認証情報を作るエンドポイントを未認証で叩けてしまう。
+        if (environment.acceptsProfiles(Profiles.of(E2E_PROFILE))) {
+          authorize.requestMatchers(HttpMethod.POST, E2E_RESET_PATH).permitAll()
+        }
+
+        authorize.anyRequest().authenticated()
       }
       .formLogin { formLogin -> formLogin.disable() }
       .httpBasic { httpBasic -> httpBasic.disable() }
@@ -112,6 +122,11 @@ class SecurityConfig(private val securityFeatureProperties: SecurityFeaturePrope
     response.characterEncoding = "UTF-8"
     response.contentType = MediaType.APPLICATION_JSON_VALUE
     response.writer.write("""{"message":"${escapeJson(message)}"}""")
+  }
+
+  private companion object {
+    const val E2E_PROFILE = "e2e"
+    const val E2E_RESET_PATH = "/api/e2e/reset"
   }
 
   private fun escapeJson(value: String): String = buildString {

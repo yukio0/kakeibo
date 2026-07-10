@@ -22,8 +22,6 @@ data class TransactionMonthlySaveRequest(
   val displayOrder: Int?,
 )
 
-data class TransactionMonthlySaveResponse(val status: String)
-
 data class TransactionResponse(
   val id: Long,
   val date: String,

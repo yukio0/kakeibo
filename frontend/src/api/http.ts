@@ -31,13 +31,42 @@ const csrfPath = '/api/csrf'
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown
+  /** レスポンスボディにメッセージが無いときに ApiError へ載せる文言。 */
+  fallbackMessage?: string
 }
 
 let csrfToken: CsrfToken | null = null
 let csrfTokenPromise: Promise<CsrfToken> | null = null
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { body, ...requestOptions } = options
+  const response = await sendRequest(path, options)
+
+  if (response.status === 204) {
+    return undefined as T
+  }
+
+  if (isJson(response)) {
+    return (await response.json()) as T
+  }
+
+  return (await response.text()) as T
+}
+
+export async function apiBlobRequest(path: string, options: RequestOptions = {}): Promise<Blob> {
+  const response = await sendRequest(path, options)
+  return response.blob()
+}
+
+export function toMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    return error.message
+  }
+  return '通信に失敗しました'
+}
+
+/** CSRFトークンの付与とエラーレスポンスの解釈をまとめる。ボディの読み方だけが呼び出し側で変わる。 */
+async function sendRequest(path: string, options: RequestOptions): Promise<Response> {
+  const { body, fallbackMessage, ...requestOptions } = options
   const headers = new Headers(requestOptions.headers)
   const method = (requestOptions.method ?? 'GET').toUpperCase()
   const init: RequestInit = {
@@ -57,29 +86,22 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   const response = await fetch(path, init)
-  const contentType = response.headers.get('content-type') ?? ''
 
   if (!response.ok) {
-    const body = contentType.includes(jsonContentType)
-      ? ((await response.json()) as ApiErrorBody)
-      : undefined
+    const errorBody = isJson(response) ? ((await response.json()) as ApiErrorBody) : undefined
 
     throw new ApiError(
       response.status,
-      body?.message ?? `API request failed: ${response.status}`,
-      body?.errors ?? [],
+      errorBody?.message ?? fallbackMessage ?? `API request failed: ${response.status}`,
+      errorBody?.errors ?? [],
     )
   }
 
-  if (response.status === 204) {
-    return undefined as T
-  }
+  return response
+}
 
-  if (contentType.includes(jsonContentType)) {
-    return (await response.json()) as T
-  }
-
-  return (await response.text()) as T
+function isJson(response: Response): boolean {
+  return (response.headers.get('content-type') ?? '').includes(jsonContentType)
 }
 
 export function clearCsrfToken(): void {

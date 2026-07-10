@@ -58,12 +58,13 @@ class TransactionService(
     return csv.toByteArray(StandardCharsets.UTF_8)
   }
 
+  /** 保存後の家計簿データを、リクエストと同じ並びで返す。呼び出し側は位置で新規行のIDを引き当てられる。 */
   @Transactional
   fun saveMonthly(
     year: Int?,
     month: Int?,
     requests: List<TransactionMonthlySaveRequest>,
-  ): TransactionMonthlySaveResponse {
+  ): List<TransactionResponse> {
     val monthlyPeriod = MonthlyPeriod.from(year, month)
     validateBeanConstraints(requests)
 
@@ -99,18 +100,11 @@ class TransactionService(
       )
     validateCategoryTypes(commands, categories)
 
-    val monthlyTransactions =
-      transactionRepository
-        .findAllByTransactionDateGreaterThanEqualAndTransactionDateLessThanOrderByDisplayOrderAscIdAsc(
-          monthlyPeriod.startDate,
-          monthlyPeriod.endDateExclusive,
-        )
-
     transactionRepository.deleteAll(
-      monthlyTransactions.filter { it.requiredId() !in requestedExistingIds }
+      findMonthlyTransactions(monthlyPeriod).filter { it.requiredId() !in requestedExistingIds }
     )
 
-    commands.forEach { command ->
+    val savedTransactions = commands.map { command ->
       val transaction =
         command.id?.let { existingTransactions.getValue(it) }
           ?: TransactionEntity(
@@ -138,10 +132,12 @@ class TransactionService(
 
       if (command.id == null) {
         transactionRepository.save(transaction)
+      } else {
+        transaction
       }
     }
 
-    return TransactionMonthlySaveResponse(status = "ok")
+    return savedTransactions.map { it.toResponse() }
   }
 
   private fun validateBeanConstraints(requests: List<TransactionMonthlySaveRequest>) {
@@ -291,43 +287,12 @@ class TransactionService(
     }
   }
 
+  /** [validateBeanConstraints] を通過済みのリクエストだけを受け取るため、null 許容の項目はすべて確定している。 */
   private fun TransactionMonthlySaveRequest.toCommand(
     index: Int,
     monthlyPeriod: MonthlyPeriod,
   ): TransactionMonthlySaveCommand {
     val transactionDate = parseDate(index, date!!)
-    val selectedType = type!!
-    val targetErrors = mutableListOf<ApiFieldErrorResponse>()
-    val selectedCategoryId =
-      validateTargetId(
-        index = index,
-        field = "categoryId",
-        value = categoryId,
-        message =
-          if (selectedType == TransactionType.TRANSFER) {
-            "振替元を選択してください"
-          } else {
-            "カテゴリを選択してください"
-          },
-        errors = targetErrors,
-      )
-    val selectedPaymentMethodId =
-      validateTargetId(
-        index = index,
-        field = "paymentMethodId",
-        value = paymentMethodId,
-        message =
-          if (selectedType == TransactionType.TRANSFER) {
-            "振替先を選択してください"
-          } else {
-            "支払い方法を選択してください"
-          },
-        errors = targetErrors,
-      )
-    if (targetErrors.isNotEmpty()) {
-      throw ApiValidationException("入力内容に誤りがあります", targetErrors)
-    }
-
     if (!transactionDate.isIn(monthlyPeriod)) {
       throw ApiValidationException(
         message = "URLの年月と日付が一致していません",
@@ -345,27 +310,13 @@ class TransactionService(
       index = index,
       id = id,
       transactionDate = transactionDate,
-      type = selectedType,
-      categoryId = selectedCategoryId!!,
-      paymentMethodId = selectedPaymentMethodId!!,
+      type = type!!,
+      categoryId = categoryId!!,
+      paymentMethodId = paymentMethodId!!,
       amount = amount!!,
       memo = memo,
       displayOrder = displayOrder!!,
     )
-  }
-
-  private fun validateTargetId(
-    index: Int,
-    field: String,
-    value: Long?,
-    message: String,
-    errors: MutableList<ApiFieldErrorResponse>,
-  ): Long? {
-    if (value == null || value <= 0) {
-      errors += ApiFieldErrorResponse(field = rowField(index, field), message = message)
-      return null
-    }
-    return value
   }
 
   private fun parseDate(index: Int, date: String): LocalDate =
@@ -406,7 +357,7 @@ class TransactionService(
     }
 
     return TransactionResponse(
-      id = id ?: error("Transaction id is not assigned"),
+      id = requiredId(),
       date = transactionDate.toString(),
       type = type,
       categoryId = categoryId,
@@ -440,16 +391,6 @@ class TransactionService(
     target.append(values.joinToString(",") { value -> "\"" + value.replace("\"", "\"\"") + "\"" })
     target.append("\r\n")
   }
-
-  private fun CategoryEntity.requiredId(): Long = id ?: error("Category id is not assigned")
-
-  private fun PaymentMethodEntity.requiredId(): Long =
-    id ?: error("Payment method id is not assigned")
-
-  private fun TransferAccountEntity.requiredId(): Long =
-    id ?: error("Transfer account id is not assigned")
-
-  private fun TransactionEntity.requiredId(): Long = id ?: error("Transaction id is not assigned")
 
   private data class TransactionMonthlySaveCommand(
     val index: Int,

@@ -284,7 +284,7 @@ button:disabled {
   align-items: start;
 }
 
-.payment-method-form-grid {
+.form-grid-compact {
   grid-template-columns: minmax(220px, 1fr) minmax(140px, 0.4fr) auto;
 }
 

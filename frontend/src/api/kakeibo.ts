@@ -1,4 +1,4 @@
-import { ApiError, apiRequest, clearCsrfToken } from './http'
+import { apiBlobRequest, apiRequest, clearCsrfToken } from './http'
 
 export type TransactionType = 'EXPENSE' | 'INCOME' | 'TRANSFER'
 export type CategoryType = Exclude<TransactionType, 'TRANSFER'>
@@ -60,10 +60,6 @@ export type TransactionMonthlySaveRequest = {
   amount: number | null
   memo: string | null
   displayOrder: number
-}
-
-export type TransactionMonthlySaveResponse = {
-  status: string
 }
 
 export type MonthlySummary = {
@@ -295,30 +291,22 @@ export function getTransactions(year: number, month: number): Promise<Transactio
   return apiRequest<Transaction[]>(`/api/transactions?year=${year}&month=${month}`)
 }
 
-export async function exportMonthlyTransactions(year: number, month: number): Promise<Blob> {
-  const response = await fetch('/api/transactions/export?year=' + year + '&month=' + month, {
-    credentials: 'same-origin',
+export function exportMonthlyTransactions(year: number, month: number): Promise<Blob> {
+  return apiBlobRequest(`/api/transactions/export?year=${year}&month=${month}`, {
+    fallbackMessage: 'CSVの出力に失敗しました',
   })
-
-  if (!response.ok) {
-    throw new ApiError(response.status, 'CSVの出力に失敗しました')
-  }
-
-  return response.blob()
 }
 
+/** 保存後の家計簿データを、渡した `requests` と同じ並びで返す。 */
 export function saveMonthlyTransactions(
   year: number,
   month: number,
   requests: TransactionMonthlySaveRequest[],
-): Promise<TransactionMonthlySaveResponse> {
-  return apiRequest<TransactionMonthlySaveResponse>(
-    `/api/transactions/monthly?year=${year}&month=${month}`,
-    {
-      method: 'PUT',
-      body: requests,
-    },
-  )
+): Promise<Transaction[]> {
+  return apiRequest<Transaction[]>(`/api/transactions/monthly?year=${year}&month=${month}`, {
+    method: 'PUT',
+    body: requests,
+  })
 }
 
 export function getMonthlySummary(year: number, month: number): Promise<MonthlySummary> {

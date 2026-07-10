@@ -2,120 +2,78 @@ package jp.yukio0.kakeibo.category
 
 import jp.yukio0.kakeibo.api.ApiFieldErrorResponse
 import jp.yukio0.kakeibo.api.ApiValidationException
-import jp.yukio0.kakeibo.api.BadRequestException
-import jp.yukio0.kakeibo.api.ResourceNotFoundException
 import jp.yukio0.kakeibo.domain.TransactionType
+import jp.yukio0.kakeibo.master.MasterCrudService
+import jp.yukio0.kakeibo.master.MasterLabels
+import jp.yukio0.kakeibo.master.normalizedName
+import jp.yukio0.kakeibo.master.requiredDisplayOrder
 import jp.yukio0.kakeibo.transaction.TransactionRepository
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 
 @Service
 class CategoryService(
   private val categoryRepository: CategoryRepository,
   private val transactionRepository: TransactionRepository,
-) {
+) : MasterCrudService<CategoryEntity, CategoryRequest, CategoryResponse>(categoryRepository) {
 
-  @Transactional(readOnly = true)
-  fun findAll(): List<CategoryResponse> =
-    categoryRepository.findAllByOrderByTypeAscDisplayOrderAscIdAsc().map { it.toResponse() }
-
-  @Transactional
-  fun create(request: CategoryRequest): CategoryResponse {
-    val command = request.toCommand()
-    if (categoryRepository.existsByNameAndType(command.name, command.type)) {
-      throw validationException(
-        message = "同じ種別のカテゴリ名はすでに存在します",
-        field = "name",
-      )
-    }
-
-    val category =
-      categoryRepository.save(
-        CategoryEntity(
-          name = command.name,
-          type = command.type,
-          displayOrder = command.displayOrder,
-        )
-      )
-    return category.toResponse()
-  }
-
-  @Transactional
-  fun update(id: Long, request: CategoryRequest): CategoryResponse {
-    val category = findCategory(id)
-    val command = request.toCommand()
-    if (categoryRepository.existsByNameAndTypeAndIdNot(command.name, command.type, id)) {
-      throw validationException(
-        message = "同じ種別のカテゴリ名はすでに存在します",
-        field = "name",
-      )
-    }
-
-    category.name = command.name
-    category.type = command.type
-    category.displayOrder = command.displayOrder
-    return category.toResponse()
-  }
-
-  @Transactional
-  fun delete(id: Long) {
-    val category = findCategory(id)
-    if (categoryRepository.countByType(category.type) <= 1) {
-      throw BadRequestException("各種別のカテゴリは最低1件必要です")
-    }
-    if (transactionRepository.existsByCategoryId(id)) {
-      throw BadRequestException("使用中のカテゴリは削除できません")
-    }
-
-    categoryRepository.delete(category)
-  }
-
-  private fun findCategory(id: Long): CategoryEntity =
-    categoryRepository.findById(id).orElseThrow { ResourceNotFoundException("カテゴリが見つかりません") }
-
-  private fun CategoryRequest.toCommand(): CategoryCommand {
-    val errors = mutableListOf<ApiFieldErrorResponse>()
-    val normalizedName = name?.trim()
-    if (normalizedName.isNullOrEmpty()) {
-      errors += ApiFieldErrorResponse(field = "name", message = "カテゴリ名を入力してください")
-    }
-    if (type == null) {
-      errors += ApiFieldErrorResponse(field = "type", message = "種別を選択してください")
-    } else if (type == TransactionType.TRANSFER) {
-      errors += ApiFieldErrorResponse(field = "type", message = "カテゴリ種別は支出または収入を選択してください")
-    }
-    if (displayOrder == null) {
-      errors += ApiFieldErrorResponse(field = "displayOrder", message = "表示順を入力してください")
-    } else if (displayOrder < 0) {
-      errors += ApiFieldErrorResponse(field = "displayOrder", message = "表示順は0以上で入力してください")
-    }
-    if (errors.isNotEmpty()) {
-      throw ApiValidationException("入力内容に誤りがあります", errors)
-    }
-    return CategoryCommand(
-      name = normalizedName!!,
-      type = type!!,
-      displayOrder = displayOrder!!,
+  override val labels =
+    MasterLabels(
+      notFound = "カテゴリが見つかりません",
+      duplicateName = "同じ種別のカテゴリ名はすでに存在します",
+      lastRemaining = "各種別のカテゴリは最低1件必要です",
+      inUse = "使用中のカテゴリは削除できません",
     )
+
+  override fun findAllSorted(): List<CategoryEntity> =
+    categoryRepository.findAllByOrderByTypeAscDisplayOrderAscIdAsc()
+
+  override fun newEntity(request: CategoryRequest): CategoryEntity =
+    CategoryEntity(
+      name = request.normalizedName,
+      type = request.requiredType,
+      displayOrder = request.requiredDisplayOrder,
+    )
+
+  override fun applyTo(entity: CategoryEntity, request: CategoryRequest) {
+    entity.name = request.normalizedName
+    entity.type = request.requiredType
+    entity.displayOrder = request.requiredDisplayOrder
   }
 
-  private fun CategoryEntity.toResponse(): CategoryResponse =
+  override fun toResponse(entity: CategoryEntity): CategoryResponse =
     CategoryResponse(
-      id = id ?: error("Category id is not assigned"),
-      name = name,
-      type = type,
-      displayOrder = displayOrder,
+      id = entity.requiredId(),
+      name = entity.name,
+      type = entity.type,
+      displayOrder = entity.displayOrder,
     )
 
-  private data class CategoryCommand(
-    val name: String,
-    val type: TransactionType,
-    val displayOrder: Int,
-  )
+  override fun existsSameName(request: CategoryRequest, excludedId: Long?): Boolean =
+    if (excludedId == null) {
+      categoryRepository.existsByNameAndType(request.normalizedName, request.requiredType)
+    } else {
+      categoryRepository.existsByNameAndTypeAndIdNot(
+        request.normalizedName,
+        request.requiredType,
+        excludedId,
+      )
+    }
 
-  private fun validationException(message: String, field: String): ApiValidationException =
-    ApiValidationException(
-      message = message,
-      errors = listOf(ApiFieldErrorResponse(field = field, message = message)),
-    )
+  override fun isLastRemaining(entity: CategoryEntity): Boolean =
+    categoryRepository.countByType(entity.type) <= 1
+
+  override fun isUsedByTransaction(id: Long): Boolean = transactionRepository.existsByCategoryId(id)
+
+  override fun validate(request: CategoryRequest) {
+    if (request.requiredType == TransactionType.TRANSFER) {
+      val message = "カテゴリ種別は支出または収入を選択してください"
+      throw ApiValidationException(
+        message = "入力内容に誤りがあります",
+        errors = listOf(ApiFieldErrorResponse(field = "type", message = message)),
+      )
+    }
+  }
+
+  private val CategoryRequest.requiredType: TransactionType
+    get() = checkNotNull(type)
 }

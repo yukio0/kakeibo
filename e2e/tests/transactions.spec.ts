@@ -1,10 +1,11 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import {
   currentLocalDate,
   findEditableTransactionRow,
   loginThroughMfa,
   resetE2eData,
   saveScreenshot,
+  waitForMonthlySave,
 } from './support/test-support'
 
 test.beforeEach(async ({ page, request }) => {
@@ -22,11 +23,9 @@ test('家計簿を1件入力して自動保存後に再表示する', async ({ p
   await row.locator('select').nth(1).selectOption({ label: '食費' })
   await row.locator('select').nth(2).selectOption({ label: '現金' })
 
-  const saveResponse = page.waitForResponse(
-    (response) =>
-      response.url().includes('/api/transactions/monthly') &&
-      response.request().method() === 'PUT' &&
-      response.ok(),
+  const saveResponse = waitForMonthlySave(
+    page,
+    (rows) => rows.length === 1 && rows[0].amount === 1234 && rows[0].memo === 'E2Eテストの支出',
   )
   await row.locator('input[type="number"]').fill('1234')
   await row.locator('textarea').fill('E2Eテストの支出')
@@ -44,9 +43,7 @@ test('家計簿を1件入力して自動保存後に再表示する', async ({ p
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: 'CSV出力', exact: true }).click()
   const download = await downloadPromise
-  await expect(download.suggestedFilename()).toBe(
-    'kakeibo-' + currentLocalDate().slice(0, 7) + '.csv',
-  )
+  expect(download.suggestedFilename()).toBe('kakeibo-' + currentLocalDate().slice(0, 7) + '.csv')
 })
 
 test('金額が未入力の行では金額セルにエラーを表示する', async ({ page }, testInfo) => {
@@ -59,4 +56,58 @@ test('金額が未入力の行では金額セルにエラーを表示する', as
   await expect(amountInput).toHaveClass(/cell-error/)
   await expect(row.locator('.field-error')).toBeVisible()
   await saveScreenshot(page, testInfo, 'transaction-validation-error')
+})
+
+const enteredRows = (page: Page) =>
+  page.locator('.transaction-table tbody tr').filter({ has: page.locator('input[type="number"]') })
+
+function amountValues(page: Page): Promise<string[]> {
+  return page
+    .locator('.transaction-table tbody tr input[type="number"]')
+    .evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value))
+}
+
+test('同じ内容の行を2件保存しても、片方の更新で行が重複しない', async ({ page }) => {
+  await loginThroughMfa(page)
+  const date = currentLocalDate()
+
+  const first = enteredRows(page).nth(0)
+  await first.locator('input[type="date"]').fill(date)
+  await first.locator('select').nth(1).selectOption({ label: '食費' })
+  await first.locator('select').nth(2).selectOption({ label: '現金' })
+  let saved = waitForMonthlySave(
+    page,
+    (rows) => rows.length === 1 && rows[0].amount === 1000 && rows[0].memo === '同一内容',
+  )
+  await first.locator('input[type="number"]').fill('1000')
+  await first.locator('textarea').fill('同一内容')
+  await saved
+
+  // 2行目に1行目と完全に同じ内容を入力する
+  const second = enteredRows(page).nth(1)
+  await second.locator('input[type="date"]').fill(date)
+  await second.locator('select').nth(1).selectOption({ label: '食費' })
+  await second.locator('select').nth(2).selectOption({ label: '現金' })
+  saved = waitForMonthlySave(
+    page,
+    (rows) =>
+      rows.length === 2 && rows.every((row) => row.amount === 1000 && row.memo === '同一内容'),
+  )
+  await second.locator('input[type="number"]').fill('1000')
+  await second.locator('textarea').fill('同一内容')
+  await saved
+
+  await expect(page.getByText('登録済み 2件', { exact: true })).toBeVisible()
+
+  // 1行目だけ金額を変える。保存後のIDが行に正しく戻っていなければ3件目が生まれる
+  saved = waitForMonthlySave(
+    page,
+    (rows) => rows.length === 2 && rows[0].amount === 2000 && rows[1].amount === 1000,
+  )
+  await enteredRows(page).nth(0).locator('input[type="number"]').fill('2000')
+  await saved
+
+  await page.reload()
+  await expect(page.getByText('登録済み 2件', { exact: true })).toBeVisible()
+  await expect.poll(() => amountValues(page)).toEqual(['2000', '1000', ''])
 })

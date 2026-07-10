@@ -119,7 +119,16 @@ class TransactionMonthlySaveApiTests {
       )
       .andExpect(status().isOk)
       .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-      .andExpect(jsonPath("$.status").value("ok"))
+      // 保存後の行は表示順ではなくリクエストと同じ並びで返る
+      .andExpect(jsonPath("$", hasSize<Int>(2)))
+      .andExpect(jsonPath("$[0].id").value(updateTarget.id!!.toInt()))
+      .andExpect(jsonPath("$[0].date").value("2026-07-03"))
+      .andExpect(jsonPath("$[0].amount").value(5000))
+      .andExpect(jsonPath("$[0].displayOrder").value(2))
+      .andExpect(jsonPath("$[1].id").isNumber)
+      .andExpect(jsonPath("$[1].date").value("2026-07-04"))
+      .andExpect(jsonPath("$[1].amount").value(1200))
+      .andExpect(jsonPath("$[1].displayOrder").value(1))
 
     mockMvc
       .perform(get("/api/transactions").param("year", "2026").param("month", "7"))
@@ -180,7 +189,11 @@ class TransactionMonthlySaveApiTests {
           )
       )
       .andExpect(status().isOk)
-      .andExpect(jsonPath("$.status").value("ok"))
+      .andExpect(jsonPath("$", hasSize<Int>(1)))
+      .andExpect(jsonPath("$[0].id").isNumber)
+      .andExpect(jsonPath("$[0].type").value("TRANSFER"))
+      .andExpect(jsonPath("$[0].categoryName").value("財布"))
+      .andExpect(jsonPath("$[0].paymentMethodName").value("銀行口座"))
 
     mockMvc
       .perform(get("/api/transactions").param("year", "2026").param("month", "7"))
@@ -409,6 +422,54 @@ class TransactionMonthlySaveApiTests {
           ),
         )
       )
+  }
+
+  @Test
+  fun monthlySaveMessagesForUnselectedTargetsDependOnType() {
+    mockMvc
+      .perform(
+        put("/api/transactions/monthly")
+          .param("year", "2026")
+          .param("month", "7")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(
+            """
+            [
+              {
+                "id": null,
+                "date": "2026-07-01",
+                "type": "EXPENSE",
+                "categoryId": null,
+                "paymentMethodId": 0,
+                "amount": 1000,
+                "memo": null,
+                "displayOrder": 1
+              },
+              {
+                "id": null,
+                "date": "2026-07-01",
+                "type": "TRANSFER",
+                "categoryId": null,
+                "paymentMethodId": 0,
+                "amount": 1000,
+                "memo": null,
+                "displayOrder": 2
+              }
+            ]
+            """
+              .trimIndent()
+          )
+      )
+      .andExpect(status().isBadRequest)
+      .andExpect(jsonPath("$.message").value("入力内容に誤りがあります"))
+      .andExpect(jsonPath("$.errors[0].field").value("[0].categoryId"))
+      .andExpect(jsonPath("$.errors[0].message").value("カテゴリを選択してください"))
+      .andExpect(jsonPath("$.errors[1].field").value("[0].paymentMethodId"))
+      .andExpect(jsonPath("$.errors[1].message").value("支払い方法を選択してください"))
+      .andExpect(jsonPath("$.errors[2].field").value("[1].categoryId"))
+      .andExpect(jsonPath("$.errors[2].message").value("振替元を選択してください"))
+      .andExpect(jsonPath("$.errors[3].field").value("[1].paymentMethodId"))
+      .andExpect(jsonPath("$.errors[3].message").value("振替先を選択してください"))
   }
 
   @Test
