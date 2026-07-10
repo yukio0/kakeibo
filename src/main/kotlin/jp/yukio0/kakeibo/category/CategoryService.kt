@@ -1,5 +1,7 @@
 package jp.yukio0.kakeibo.category
 
+import jp.yukio0.kakeibo.api.ApiFieldErrorResponse
+import jp.yukio0.kakeibo.api.ApiValidationException
 import jp.yukio0.kakeibo.api.BadRequestException
 import jp.yukio0.kakeibo.api.ResourceNotFoundException
 import jp.yukio0.kakeibo.domain.TransactionType
@@ -21,7 +23,10 @@ class CategoryService(
   fun create(request: CategoryRequest): CategoryResponse {
     val command = request.toCommand()
     if (categoryRepository.existsByNameAndType(command.name, command.type)) {
-      throw BadRequestException("同じ種別のカテゴリ名はすでに存在します")
+      throw validationException(
+        message = "同じ種別のカテゴリ名はすでに存在します",
+        field = "name",
+      )
     }
 
     val category =
@@ -40,7 +45,10 @@ class CategoryService(
     val category = findCategory(id)
     val command = request.toCommand()
     if (categoryRepository.existsByNameAndTypeAndIdNot(command.name, command.type, id)) {
-      throw BadRequestException("同じ種別のカテゴリ名はすでに存在します")
+      throw validationException(
+        message = "同じ種別のカテゴリ名はすでに存在します",
+        field = "name",
+      )
     }
 
     category.name = command.name
@@ -63,14 +71,26 @@ class CategoryService(
     categoryRepository.findById(id).orElseThrow { ResourceNotFoundException("カテゴリが見つかりません") }
 
   private fun CategoryRequest.toCommand(): CategoryCommand {
+    val errors = mutableListOf<ApiFieldErrorResponse>()
     val normalizedName = name?.trim()
-    if (normalizedName.isNullOrEmpty() || type == null || displayOrder == null) {
-      throw BadRequestException("入力内容に誤りがあります")
+    if (normalizedName.isNullOrEmpty()) {
+      errors += ApiFieldErrorResponse(field = "name", message = "カテゴリ名を入力してください")
+    }
+    if (type == null) {
+      errors += ApiFieldErrorResponse(field = "type", message = "種別を選択してください")
+    }
+    if (displayOrder == null) {
+      errors += ApiFieldErrorResponse(field = "displayOrder", message = "表示順を入力してください")
+    } else if (displayOrder < 0) {
+      errors += ApiFieldErrorResponse(field = "displayOrder", message = "表示順は0以上で入力してください")
+    }
+    if (errors.isNotEmpty()) {
+      throw ApiValidationException("入力内容に誤りがあります", errors)
     }
     return CategoryCommand(
-      name = normalizedName,
-      type = type,
-      displayOrder = displayOrder,
+      name = normalizedName!!,
+      type = type!!,
+      displayOrder = displayOrder!!,
     )
   }
 
@@ -87,4 +107,10 @@ class CategoryService(
     val type: TransactionType,
     val displayOrder: Int,
   )
+
+  private fun validationException(message: String, field: String): ApiValidationException =
+    ApiValidationException(
+      message = message,
+      errors = listOf(ApiFieldErrorResponse(field = field, message = message)),
+    )
 }

@@ -116,6 +116,8 @@ class CategoryApiTests {
 
   @Test
   fun invalidCategoryRequestsReturnBadRequest() {
+    val tooLongName = "あ".repeat(101)
+
     mockMvc
       .perform(
         post("/api/categories")
@@ -134,6 +136,25 @@ class CategoryApiTests {
       .andExpect(status().isBadRequest)
       .andExpect(jsonPath("$.message").value("入力内容に誤りがあります"))
       .andExpect(jsonPath("$.errors[*].field", hasItems("name", "type", "displayOrder")))
+
+    mockMvc
+      .perform(
+        post("/api/categories")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(
+            """
+            {
+              "name": "$tooLongName",
+              "type": "EXPENSE",
+              "displayOrder": 1
+            }
+            """
+              .trimIndent()
+          )
+      )
+      .andExpect(status().isBadRequest)
+      .andExpect(jsonPath("$.message").value("入力内容に誤りがあります"))
+      .andExpect(jsonPath("$.errors[*].field", hasItem("name")))
 
     mockMvc
       .perform(
@@ -173,6 +194,7 @@ class CategoryApiTests {
       )
       .andExpect(status().isBadRequest)
       .andExpect(jsonPath("$.message").value("同じ種別のカテゴリ名はすでに存在します"))
+      .andExpect(jsonPath("$.errors[0].field").value("name"))
   }
 
   @Test

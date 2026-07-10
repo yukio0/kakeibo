@@ -49,6 +49,13 @@ class GlobalExceptionHandler {
   )
   fun handleInvalidRequestFormat(): ResponseEntity<ApiErrorResponse> = badRequest("リクエストの形式が不正です")
 
+  @ExceptionHandler(ApiValidationException::class)
+  fun handleApiValidation(exception: ApiValidationException): ResponseEntity<ApiErrorResponse> =
+    badRequest(
+      message = exception.message ?: "入力内容に誤りがあります",
+      errors = exception.errors,
+    )
+
   @ExceptionHandler(BadRequestException::class)
   fun handleBadRequest(exception: BadRequestException): ResponseEntity<ApiErrorResponse> =
     badRequest(exception.message ?: "入力内容に誤りがあります")
