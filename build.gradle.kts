@@ -8,6 +8,9 @@ plugins {
 }
 
 val e2eRuntimeOnly = configurations.create("e2eRuntimeOnly")
+val e2eDirectory = layout.projectDirectory.dir("e2e")
+val npmExecutable =
+  if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) "npm.cmd" else "npm"
 
 group = "jp.yukio0"
 
@@ -43,6 +46,35 @@ dependencies {
 
 tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
   classpath = classpath + e2eRuntimeOnly
+}
+
+val e2eInstall =
+  tasks.register<Exec>("e2eInstall") {
+    group = "verification"
+    description = "E2Eテスト用のnpm依存関係をインストールします。"
+    workingDir(e2eDirectory)
+    commandLine(npmExecutable, "ci")
+    inputs.files(e2eDirectory.file("package.json"), e2eDirectory.file("package-lock.json"))
+    outputs.dir(e2eDirectory.dir("node_modules"))
+  }
+
+val e2eInstallBrowsers =
+  tasks.register<Exec>("e2eInstallBrowsers") {
+    group = "verification"
+    description = "E2Eテスト用のChromiumを準備します。"
+    dependsOn(e2eInstall)
+    workingDir(e2eDirectory)
+    commandLine(npmExecutable, "run", "install:browsers")
+    inputs.file(e2eDirectory.file("package-lock.json"))
+    outputs.upToDateWhen { false }
+  }
+
+tasks.register<Exec>("e2eTest") {
+  group = "verification"
+  description = "PlaywrightでE2Eテストを実行します。"
+  dependsOn(e2eInstallBrowsers)
+  workingDir(e2eDirectory)
+  commandLine(npmExecutable, "run", "test")
 }
 
 kotlin {
