@@ -60,6 +60,9 @@ class CategoryService(
   @Transactional
   fun delete(id: Long) {
     val category = findCategory(id)
+    if (categoryRepository.countByType(category.type) <= 1) {
+      throw BadRequestException("各種別のカテゴリは最低1件必要です")
+    }
     if (transactionRepository.existsByCategoryId(id)) {
       throw BadRequestException("使用中のカテゴリは削除できません")
     }
@@ -78,6 +81,8 @@ class CategoryService(
     }
     if (type == null) {
       errors += ApiFieldErrorResponse(field = "type", message = "種別を選択してください")
+    } else if (type == TransactionType.TRANSFER) {
+      errors += ApiFieldErrorResponse(field = "type", message = "カテゴリ種別は支出または収入を選択してください")
     }
     if (displayOrder == null) {
       errors += ApiFieldErrorResponse(field = "displayOrder", message = "表示順を入力してください")

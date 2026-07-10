@@ -8,6 +8,10 @@ import jp.yukio0.kakeibo.api.ResourceNotFoundException
 import jp.yukio0.kakeibo.category.CategoryEntity
 import jp.yukio0.kakeibo.category.CategoryRepository
 import jp.yukio0.kakeibo.domain.TransactionType
+import jp.yukio0.kakeibo.paymentmethod.PaymentMethodEntity
+import jp.yukio0.kakeibo.paymentmethod.PaymentMethodRepository
+import jp.yukio0.kakeibo.transfer.TransferAccountEntity
+import jp.yukio0.kakeibo.transfer.TransferAccountRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -15,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional
 class TransactionService(
   private val transactionRepository: TransactionRepository,
   private val categoryRepository: CategoryRepository,
+  private val paymentMethodRepository: PaymentMethodRepository,
+  private val transferAccountRepository: TransferAccountRepository,
   private val validator: Validator,
 ) {
 
@@ -51,7 +57,24 @@ class TransactionService(
       monthlyPeriod,
     )
 
-    val categories = findCategories(commands.map { it.categoryId }.toSet())
+    val categories =
+      findCategories(
+        commands.filterNot { it.type == TransactionType.TRANSFER }.map { it.categoryId }.toSet()
+      )
+    val paymentMethods =
+      findPaymentMethods(
+        commands
+          .filterNot { it.type == TransactionType.TRANSFER }
+          .map { it.paymentMethodId }
+          .toSet()
+      )
+    val transferAccounts =
+      findTransferAccounts(
+        commands
+          .filter { it.type == TransactionType.TRANSFER }
+          .flatMap { listOf(it.categoryId, it.paymentMethodId) }
+          .toSet()
+      )
     validateCategoryTypes(commands, categories)
 
     val monthlyTransactions =
@@ -66,17 +89,25 @@ class TransactionService(
     )
 
     commands.forEach { command ->
-      val category = categories.getValue(command.categoryId)
       val transaction =
         command.id?.let { existingTransactions.getValue(it) }
           ?: TransactionEntity(
-            category = category,
             type = command.type,
             transactionDate = command.transactionDate,
             amount = command.amount,
           )
 
-      transaction.category = category
+      if (command.type == TransactionType.TRANSFER) {
+        transaction.category = null
+        transaction.paymentMethod = null
+        transaction.transferSource = transferAccounts.getValue(command.categoryId)
+        transaction.transferDestination = transferAccounts.getValue(command.paymentMethodId)
+      } else {
+        transaction.category = categories.getValue(command.categoryId)
+        transaction.paymentMethod = paymentMethods.getValue(command.paymentMethodId)
+        transaction.transferSource = null
+        transaction.transferDestination = null
+      }
       transaction.type = command.type
       transaction.transactionDate = command.transactionDate
       transaction.amount = command.amount
@@ -98,12 +129,46 @@ class TransactionService(
           field = rowField(index, it.propertyPath.toString()),
           message = it.message,
         )
-      }
+      } + request.targetValidationErrors(index)
     }
     if (errors.isNotEmpty()) {
       throw ApiValidationException("入力内容に誤りがあります", errors)
     }
   }
+
+  private fun TransactionMonthlySaveRequest.targetValidationErrors(
+    index: Int
+  ): List<ApiFieldErrorResponse> {
+    val categoryMessage =
+      if (type == TransactionType.TRANSFER) {
+        "振替元を選択してください"
+      } else {
+        "カテゴリを選択してください"
+      }
+    val paymentMethodMessage =
+      if (type == TransactionType.TRANSFER) {
+        "振替先を選択してください"
+      } else {
+        "支払い方法を選択してください"
+      }
+
+    return listOfNotNull(
+      targetValidationError(index, "categoryId", categoryId, categoryMessage),
+      targetValidationError(index, "paymentMethodId", paymentMethodId, paymentMethodMessage),
+    )
+  }
+
+  private fun targetValidationError(
+    index: Int,
+    field: String,
+    value: Long?,
+    message: String,
+  ): ApiFieldErrorResponse? =
+    if (value == null || value <= 0) {
+      ApiFieldErrorResponse(field = rowField(index, field), message = message)
+    } else {
+      null
+    }
 
   private fun validateDuplicateIds(commands: List<TransactionMonthlySaveCommand>) {
     val seenIds = mutableSetOf<Long>()
@@ -168,12 +233,30 @@ class TransactionService(
     return categories
   }
 
+  private fun findPaymentMethods(ids: Set<Long>): Map<Long, PaymentMethodEntity> {
+    val paymentMethods = paymentMethodRepository.findAllById(ids).associateBy { it.requiredId() }
+    if (paymentMethods.keys != ids) {
+      throw ResourceNotFoundException("支払い方法が見つかりません")
+    }
+    return paymentMethods
+  }
+
+  private fun findTransferAccounts(ids: Set<Long>): Map<Long, TransferAccountEntity> {
+    val transferAccounts =
+      transferAccountRepository.findAllById(ids).associateBy { it.requiredId() }
+    if (transferAccounts.keys != ids) {
+      throw ResourceNotFoundException("振替元・振替先が見つかりません")
+    }
+    return transferAccounts
+  }
+
   private fun validateCategoryTypes(
     commands: List<TransactionMonthlySaveCommand>,
     categories: Map<Long, CategoryEntity>,
   ) {
     val errors =
       commands
+        .filterNot { it.type == TransactionType.TRANSFER }
         .filter { categories.getValue(it.categoryId).type != it.type }
         .map {
           ApiFieldErrorResponse(
@@ -191,6 +274,38 @@ class TransactionService(
     monthlyPeriod: MonthlyPeriod,
   ): TransactionMonthlySaveCommand {
     val transactionDate = parseDate(index, date!!)
+    val selectedType = type!!
+    val targetErrors = mutableListOf<ApiFieldErrorResponse>()
+    val selectedCategoryId =
+      validateTargetId(
+        index = index,
+        field = "categoryId",
+        value = categoryId,
+        message =
+          if (selectedType == TransactionType.TRANSFER) {
+            "振替元を選択してください"
+          } else {
+            "カテゴリを選択してください"
+          },
+        errors = targetErrors,
+      )
+    val selectedPaymentMethodId =
+      validateTargetId(
+        index = index,
+        field = "paymentMethodId",
+        value = paymentMethodId,
+        message =
+          if (selectedType == TransactionType.TRANSFER) {
+            "振替先を選択してください"
+          } else {
+            "支払い方法を選択してください"
+          },
+        errors = targetErrors,
+      )
+    if (targetErrors.isNotEmpty()) {
+      throw ApiValidationException("入力内容に誤りがあります", targetErrors)
+    }
+
     if (!transactionDate.isIn(monthlyPeriod)) {
       throw ApiValidationException(
         message = "URLの年月と日付が一致していません",
@@ -208,12 +323,27 @@ class TransactionService(
       index = index,
       id = id,
       transactionDate = transactionDate,
-      type = type!!,
-      categoryId = categoryId!!,
+      type = selectedType,
+      categoryId = selectedCategoryId!!,
+      paymentMethodId = selectedPaymentMethodId!!,
       amount = amount!!,
       memo = memo,
       displayOrder = displayOrder!!,
     )
+  }
+
+  private fun validateTargetId(
+    index: Int,
+    field: String,
+    value: Long?,
+    message: String,
+    errors: MutableList<ApiFieldErrorResponse>,
+  ): Long? {
+    if (value == null || value <= 0) {
+      errors += ApiFieldErrorResponse(field = rowField(index, field), message = message)
+      return null
+    }
+    return value
   }
 
   private fun parseDate(index: Int, date: String): LocalDate =
@@ -232,13 +362,35 @@ class TransactionService(
       }
 
   private fun TransactionEntity.toResponse(): TransactionResponse {
-    val categoryId = category.id ?: error("Category id is not assigned")
+    val categoryId: Long
+    val categoryName: String
+    val paymentMethodId: Long
+    val paymentMethodName: String
+
+    if (type == TransactionType.TRANSFER) {
+      val source = transferSource ?: error("Transfer source is not assigned")
+      val destination = transferDestination ?: error("Transfer destination is not assigned")
+      categoryId = source.requiredId()
+      categoryName = source.name
+      paymentMethodId = destination.requiredId()
+      paymentMethodName = destination.name
+    } else {
+      val selectedCategory = category ?: error("Category is not assigned")
+      val selectedPaymentMethod = paymentMethod ?: error("Payment method is not assigned")
+      categoryId = selectedCategory.requiredId()
+      categoryName = selectedCategory.name
+      paymentMethodId = selectedPaymentMethod.requiredId()
+      paymentMethodName = selectedPaymentMethod.name
+    }
+
     return TransactionResponse(
       id = id ?: error("Transaction id is not assigned"),
       date = transactionDate.toString(),
       type = type,
       categoryId = categoryId,
-      categoryName = category.name,
+      categoryName = categoryName,
+      paymentMethodId = paymentMethodId,
+      paymentMethodName = paymentMethodName,
       amount = amount,
       memo = memo,
       displayOrder = displayOrder,
@@ -250,6 +402,12 @@ class TransactionService(
 
   private fun CategoryEntity.requiredId(): Long = id ?: error("Category id is not assigned")
 
+  private fun PaymentMethodEntity.requiredId(): Long =
+    id ?: error("Payment method id is not assigned")
+
+  private fun TransferAccountEntity.requiredId(): Long =
+    id ?: error("Transfer account id is not assigned")
+
   private fun TransactionEntity.requiredId(): Long = id ?: error("Transaction id is not assigned")
 
   private data class TransactionMonthlySaveCommand(
@@ -258,6 +416,7 @@ class TransactionService(
     val transactionDate: LocalDate,
     val type: TransactionType,
     val categoryId: Long,
+    val paymentMethodId: Long,
     val amount: Int,
     val memo: String?,
     val displayOrder: Int,

@@ -8,6 +8,8 @@ interface CategoryRepository : JpaRepository<CategoryEntity, Long> {
 
   fun findByNameAndType(name: String, type: TransactionType): CategoryEntity?
 
+  fun countByType(type: TransactionType): Long
+
   fun existsByNameAndType(name: String, type: TransactionType): Boolean
 
   fun existsByNameAndTypeAndIdNot(name: String, type: TransactionType, id: Long): Boolean

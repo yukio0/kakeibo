@@ -11,9 +11,8 @@ data class TransactionMonthlySaveRequest(
   @field:Positive(message = "IDは正の整数で入力してください") val id: Long?,
   @field:NotBlank(message = "日付を入力してください") val date: String?,
   @field:NotNull(message = "種別を選択してください") val type: TransactionType?,
-  @field:NotNull(message = "カテゴリを選択してください")
-  @field:Positive(message = "カテゴリを選択してください")
   val categoryId: Long?,
+  val paymentMethodId: Long?,
   @field:NotNull(message = "金額を入力してください")
   @field:Min(value = 1, message = "金額は1以上で入力してください")
   val amount: Int?,
@@ -31,6 +30,8 @@ data class TransactionResponse(
   val type: TransactionType,
   val categoryId: Long,
   val categoryName: String,
+  val paymentMethodId: Long,
+  val paymentMethodName: String,
   val amount: Int,
   val memo: String?,
   val displayOrder: Int,

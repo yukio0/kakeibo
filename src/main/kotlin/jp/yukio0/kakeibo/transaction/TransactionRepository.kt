@@ -7,13 +7,22 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 
 interface TransactionRepository : JpaRepository<TransactionEntity, Long> {
-  @EntityGraph(attributePaths = ["category"])
+  @EntityGraph(
+    attributePaths = ["category", "paymentMethod", "transferSource", "transferDestination"]
+  )
   fun findAllByTransactionDateGreaterThanEqualAndTransactionDateLessThanOrderByDisplayOrderAscIdAsc(
     startDate: LocalDate,
     endDateExclusive: LocalDate,
   ): List<TransactionEntity>
 
   fun existsByCategoryId(categoryId: Long): Boolean
+
+  fun existsByPaymentMethodId(paymentMethodId: Long): Boolean
+
+  fun existsByTransferSourceIdOrTransferDestinationId(
+    transferSourceId: Long,
+    transferDestinationId: Long,
+  ): Boolean
 
   @Query(
     """

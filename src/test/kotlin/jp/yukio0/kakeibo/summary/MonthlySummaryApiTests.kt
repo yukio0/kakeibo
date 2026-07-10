@@ -4,8 +4,12 @@ import java.time.LocalDate
 import jp.yukio0.kakeibo.category.CategoryEntity
 import jp.yukio0.kakeibo.category.CategoryRepository
 import jp.yukio0.kakeibo.domain.TransactionType
+import jp.yukio0.kakeibo.paymentmethod.PaymentMethodEntity
+import jp.yukio0.kakeibo.paymentmethod.PaymentMethodRepository
 import jp.yukio0.kakeibo.transaction.TransactionEntity
 import jp.yukio0.kakeibo.transaction.TransactionRepository
+import jp.yukio0.kakeibo.transfer.TransferAccountEntity
+import jp.yukio0.kakeibo.transfer.TransferAccountRepository
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -29,6 +33,10 @@ class MonthlySummaryApiTests {
   @Autowired private lateinit var context: WebApplicationContext
 
   @Autowired private lateinit var categoryRepository: CategoryRepository
+
+  @Autowired private lateinit var paymentMethodRepository: PaymentMethodRepository
+
+  @Autowired private lateinit var transferAccountRepository: TransferAccountRepository
 
   @Autowired private lateinit var transactionRepository: TransactionRepository
 
@@ -122,6 +130,28 @@ class MonthlySummaryApiTests {
   }
 
   @Test
+  fun monthlySummaryExcludesTransferRows() {
+    val expenseCategory = saveCategory("集計API振替除外支出カテゴリ", TransactionType.EXPENSE)
+    saveTransaction(
+      category = expenseCategory,
+      type = TransactionType.EXPENSE,
+      amount = 10_000,
+      transactionDate = LocalDate.of(2026, 11, 1),
+    )
+    saveTransferTransaction(
+      amount = 200_000,
+      transactionDate = LocalDate.of(2026, 11, 2),
+    )
+
+    mockMvc
+      .perform(get("/api/summary/monthly").param("year", "2026").param("month", "11"))
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$.incomeTotal").value(0))
+      .andExpect(jsonPath("$.expenseTotal").value(10_000))
+      .andExpect(jsonPath("$.balance").value(-10_000))
+  }
+
+  @Test
   fun monthlySummaryReturnsZeroTotalsWhenNoData() {
     mockMvc
       .perform(get("/api/summary/monthly").param("year", "2099").param("month", "12"))
@@ -169,6 +199,7 @@ class MonthlySummaryApiTests {
     transactionRepository.saveAndFlush(
       TransactionEntity(
         category = category,
+        paymentMethod = defaultPaymentMethod(),
         type = type,
         transactionDate = transactionDate,
         amount = amount,
@@ -176,4 +207,29 @@ class MonthlySummaryApiTests {
         displayOrder = 1,
       )
     )
+
+  private fun saveTransferTransaction(
+    amount: Int,
+    transactionDate: LocalDate,
+  ): TransactionEntity =
+    transactionRepository.saveAndFlush(
+      TransactionEntity(
+        transferSource = defaultTransferSource(),
+        transferDestination = defaultTransferDestination(),
+        type = TransactionType.TRANSFER,
+        transactionDate = transactionDate,
+        amount = amount,
+        memo = "振替集計除外テスト",
+        displayOrder = 1,
+      )
+    )
+
+  private fun defaultPaymentMethod(): PaymentMethodEntity =
+    paymentMethodRepository.findByName("現金") ?: error("Payment method is not found")
+
+  private fun defaultTransferSource(): TransferAccountEntity =
+    transferAccountRepository.findByName("財布") ?: error("Transfer source is not found")
+
+  private fun defaultTransferDestination(): TransferAccountEntity =
+    transferAccountRepository.findByName("銀行口座") ?: error("Transfer destination is not found")
 }

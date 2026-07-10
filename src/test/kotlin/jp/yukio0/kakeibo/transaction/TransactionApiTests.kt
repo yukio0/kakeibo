@@ -4,6 +4,8 @@ import java.time.LocalDate
 import jp.yukio0.kakeibo.category.CategoryEntity
 import jp.yukio0.kakeibo.category.CategoryRepository
 import jp.yukio0.kakeibo.domain.TransactionType
+import jp.yukio0.kakeibo.paymentmethod.PaymentMethodEntity
+import jp.yukio0.kakeibo.paymentmethod.PaymentMethodRepository
 import org.hamcrest.Matchers.hasSize
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -28,6 +30,8 @@ class TransactionApiTests {
   @Autowired private lateinit var context: WebApplicationContext
 
   @Autowired private lateinit var categoryRepository: CategoryRepository
+
+  @Autowired private lateinit var paymentMethodRepository: PaymentMethodRepository
 
   @Autowired private lateinit var transactionRepository: TransactionRepository
 
@@ -89,6 +93,8 @@ class TransactionApiTests {
       .andExpect(jsonPath("$[0].type").value("EXPENSE"))
       .andExpect(jsonPath("$[0].categoryId").value(category.id!!.toInt()))
       .andExpect(jsonPath("$[0].categoryName").value("取引APIテストカテゴリ"))
+      .andExpect(jsonPath("$[0].paymentMethodId").value(defaultPaymentMethod().id!!.toInt()))
+      .andExpect(jsonPath("$[0].paymentMethodName").value("現金"))
       .andExpect(jsonPath("$[0].amount").value(2000))
       .andExpect(jsonPath("$[0].memo").value("2番目に登録したが先に表示"))
       .andExpect(jsonPath("$[0].displayOrder").value(1))
@@ -175,6 +181,7 @@ class TransactionApiTests {
     transactionRepository.saveAndFlush(
       TransactionEntity(
         category = category,
+        paymentMethod = defaultPaymentMethod(),
         type = type,
         transactionDate = transactionDate,
         amount = amount,
@@ -182,4 +189,7 @@ class TransactionApiTests {
         displayOrder = displayOrder,
       )
     )
+
+  private fun defaultPaymentMethod(): PaymentMethodEntity =
+    paymentMethodRepository.findByName("現金") ?: error("Payment method is not found")
 }

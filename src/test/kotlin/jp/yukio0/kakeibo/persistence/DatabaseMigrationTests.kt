@@ -25,16 +25,29 @@ class DatabaseMigrationTests {
         SELECT COUNT(*)
         FROM information_schema.tables
         WHERE LOWER(table_schema) = 'public'
-          AND LOWER(table_name) IN ('app_user', 'categories', 'transactions', 'trusted_devices')
+          AND LOWER(table_name) IN (
+            'app_user',
+            'categories',
+            'payment_methods',
+            'transfer_accounts',
+            'transactions',
+            'trusted_devices'
+          )
         """
           .trimIndent(),
         Int::class.java,
       )
     val categoryCount =
       jdbcTemplate.queryForObject("SELECT COUNT(*) FROM categories", Int::class.java)
+    val paymentMethodCount =
+      jdbcTemplate.queryForObject("SELECT COUNT(*) FROM payment_methods", Int::class.java)
+    val transferAccountCount =
+      jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transfer_accounts", Int::class.java)
 
-    assertEquals(4, tableCount)
+    assertEquals(6, tableCount)
     assertEquals(13, categoryCount)
+    assertEquals(4, paymentMethodCount)
+    assertEquals(2, transferAccountCount)
   }
 
   @Test

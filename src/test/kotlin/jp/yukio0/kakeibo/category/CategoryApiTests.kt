@@ -2,6 +2,7 @@ package jp.yukio0.kakeibo.category
 
 import java.time.LocalDate
 import jp.yukio0.kakeibo.domain.TransactionType
+import jp.yukio0.kakeibo.paymentmethod.PaymentMethodRepository
 import jp.yukio0.kakeibo.transaction.TransactionEntity
 import jp.yukio0.kakeibo.transaction.TransactionRepository
 import kotlin.test.assertFalse
@@ -34,6 +35,8 @@ class CategoryApiTests {
   @Autowired private lateinit var context: WebApplicationContext
 
   @Autowired private lateinit var categoryRepository: CategoryRepository
+
+  @Autowired private lateinit var paymentMethodRepository: PaymentMethodRepository
 
   @Autowired private lateinit var transactionRepository: TransactionRepository
 
@@ -236,9 +239,12 @@ class CategoryApiTests {
         )
       )
     val categoryId = category.id ?: error("Category id is not assigned")
+    val paymentMethod =
+      paymentMethodRepository.findByName("現金") ?: error("Payment method is not found")
     transactionRepository.saveAndFlush(
       TransactionEntity(
         category = category,
+        paymentMethod = paymentMethod,
         type = TransactionType.EXPENSE,
         transactionDate = LocalDate.of(2026, 7, 9),
         amount = 1000,
@@ -254,5 +260,24 @@ class CategoryApiTests {
 
     assertTrue(categoryRepository.existsById(categoryId))
     assertTrue(transactionRepository.existsByCategoryId(categoryId))
+  }
+
+  @Test
+  fun lastCategoryInTypeCannotBeDeleted() {
+    val expenseCategories =
+      categoryRepository.findAll().filter { it.type == TransactionType.EXPENSE }
+    val categoryToKeep = expenseCategories.first()
+
+    expenseCategories.drop(1).forEach { categoryRepository.delete(it) }
+    categoryRepository.flush()
+
+    val categoryId = categoryToKeep.id ?: error("Category id is not assigned")
+
+    mockMvc
+      .perform(delete("/api/categories/{id}", categoryId))
+      .andExpect(status().isBadRequest)
+      .andExpect(jsonPath("$.message").value("各種別のカテゴリは最低1件必要です"))
+
+    assertTrue(categoryRepository.existsById(categoryId))
   }
 }

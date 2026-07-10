@@ -4,8 +4,13 @@ import java.time.LocalDate
 import jp.yukio0.kakeibo.category.CategoryEntity
 import jp.yukio0.kakeibo.category.CategoryRepository
 import jp.yukio0.kakeibo.domain.TransactionType
+import jp.yukio0.kakeibo.paymentmethod.PaymentMethodEntity
+import jp.yukio0.kakeibo.paymentmethod.PaymentMethodRepository
+import jp.yukio0.kakeibo.transfer.TransferAccountEntity
+import jp.yukio0.kakeibo.transfer.TransferAccountRepository
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import org.hamcrest.Matchers.hasItems
 import org.hamcrest.Matchers.hasSize
 import org.junit.jupiter.api.BeforeEach
@@ -32,6 +37,10 @@ class TransactionMonthlySaveApiTests {
   @Autowired private lateinit var context: WebApplicationContext
 
   @Autowired private lateinit var categoryRepository: CategoryRepository
+
+  @Autowired private lateinit var paymentMethodRepository: PaymentMethodRepository
+
+  @Autowired private lateinit var transferAccountRepository: TransferAccountRepository
 
   @Autowired private lateinit var transactionRepository: TransactionRepository
 
@@ -88,6 +97,7 @@ class TransactionMonthlySaveApiTests {
                 "date": "2026-07-03",
                 "type": "INCOME",
                 "categoryId": ${incomeCategory.id},
+                "paymentMethodId": ${defaultPaymentMethod().id},
                 "amount": 5000,
                 "memo": "更新後",
                 "displayOrder": 2
@@ -97,6 +107,7 @@ class TransactionMonthlySaveApiTests {
                 "date": "2026-07-04",
                 "type": "EXPENSE",
                 "categoryId": ${expenseCategory.id},
+                "paymentMethodId": ${defaultPaymentMethod().id},
                 "amount": 1200,
                 "memo": null,
                 "displayOrder": 1
@@ -117,6 +128,8 @@ class TransactionMonthlySaveApiTests {
       .andExpect(jsonPath("$[0].date").value("2026-07-04"))
       .andExpect(jsonPath("$[0].type").value("EXPENSE"))
       .andExpect(jsonPath("$[0].categoryId").value(expenseCategory.id!!.toInt()))
+      .andExpect(jsonPath("$[0].paymentMethodId").value(defaultPaymentMethod().id!!.toInt()))
+      .andExpect(jsonPath("$[0].paymentMethodName").value("現金"))
       .andExpect(jsonPath("$[0].amount").value(1200))
       .andExpect(jsonPath("$[0].memo").doesNotExist())
       .andExpect(jsonPath("$[0].displayOrder").value(1))
@@ -125,6 +138,8 @@ class TransactionMonthlySaveApiTests {
       .andExpect(jsonPath("$[1].type").value("INCOME"))
       .andExpect(jsonPath("$[1].categoryId").value(incomeCategory.id!!.toInt()))
       .andExpect(jsonPath("$[1].categoryName").value("一括保存API収入カテゴリ"))
+      .andExpect(jsonPath("$[1].paymentMethodId").value(defaultPaymentMethod().id!!.toInt()))
+      .andExpect(jsonPath("$[1].paymentMethodName").value("現金"))
       .andExpect(jsonPath("$[1].amount").value(5000))
       .andExpect(jsonPath("$[1].memo").value("更新後"))
       .andExpect(jsonPath("$[1].displayOrder").value(2))
@@ -133,6 +148,57 @@ class TransactionMonthlySaveApiTests {
     val unchangedOtherMonth = transactionRepository.findById(otherMonth.id!!).orElseThrow()
     assertEquals(LocalDate.of(2026, 8, 1), unchangedOtherMonth.transactionDate)
     assertEquals(3000, unchangedOtherMonth.amount)
+  }
+
+  @Test
+  fun monthlySaveCreatesTransferRowsUsingCategoryAndPaymentMethodColumnsAsSourceAndDestination() {
+    val source = defaultTransferSource()
+    val destination = defaultTransferDestination()
+
+    mockMvc
+      .perform(
+        put("/api/transactions/monthly")
+          .param("year", "2026")
+          .param("month", "7")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(
+            """
+            [
+              {
+                "id": null,
+                "date": "2026-07-05",
+                "type": "TRANSFER",
+                "categoryId": ${source.id},
+                "paymentMethodId": ${destination.id},
+                "amount": 30000,
+                "memo": "財布から銀行口座へ",
+                "displayOrder": 1
+              }
+            ]
+            """
+              .trimIndent()
+          )
+      )
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$.status").value("ok"))
+
+    mockMvc
+      .perform(get("/api/transactions").param("year", "2026").param("month", "7"))
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$", hasSize<Int>(1)))
+      .andExpect(jsonPath("$[0].type").value("TRANSFER"))
+      .andExpect(jsonPath("$[0].categoryId").value(source.id!!.toInt()))
+      .andExpect(jsonPath("$[0].categoryName").value("財布"))
+      .andExpect(jsonPath("$[0].paymentMethodId").value(destination.id!!.toInt()))
+      .andExpect(jsonPath("$[0].paymentMethodName").value("銀行口座"))
+      .andExpect(jsonPath("$[0].amount").value(30000))
+      .andExpect(jsonPath("$[0].memo").value("財布から銀行口座へ"))
+
+    val saved = transactionRepository.findAll().single()
+    assertNull(saved.category)
+    assertNull(saved.paymentMethod)
+    assertEquals(source.id, saved.transferSource?.id)
+    assertEquals(destination.id, saved.transferDestination?.id)
   }
 
   @Test
@@ -162,6 +228,7 @@ class TransactionMonthlySaveApiTests {
                 "date": "2026-07-01",
                 "type": "EXPENSE",
                 "categoryId": ${category.id},
+                "paymentMethodId": ${defaultPaymentMethod().id},
                 "amount": 9999,
                 "memo": "変更されない",
                 "displayOrder": 1
@@ -171,6 +238,7 @@ class TransactionMonthlySaveApiTests {
                 "date": "2026-08-01",
                 "type": "EXPENSE",
                 "categoryId": ${category.id},
+                "paymentMethodId": ${defaultPaymentMethod().id},
                 "amount": 500,
                 "memo": "対象月外",
                 "displayOrder": 2
@@ -217,6 +285,7 @@ class TransactionMonthlySaveApiTests {
                 "date": "2026-07-01",
                 "type": "EXPENSE",
                 "categoryId": ${category.id},
+                "paymentMethodId": ${defaultPaymentMethod().id},
                 "amount": 9999,
                 "memo": "不正更新",
                 "displayOrder": 1
@@ -253,6 +322,7 @@ class TransactionMonthlySaveApiTests {
                 "date": "2026-07-01",
                 "type": "INCOME",
                 "categoryId": ${expenseCategory.id},
+                "paymentMethodId": ${defaultPaymentMethod().id},
                 "amount": 1000,
                 "memo": "種別不一致",
                 "displayOrder": 1
@@ -280,6 +350,7 @@ class TransactionMonthlySaveApiTests {
                 "date": "2026-07-01",
                 "type": "EXPENSE",
                 "categoryId": ${expenseCategory.id},
+                "paymentMethodId": ${defaultPaymentMethod().id},
                 "amount": 1000,
                 "memo": "存在しないID",
                 "displayOrder": 1
@@ -311,6 +382,7 @@ class TransactionMonthlySaveApiTests {
                 "date": "",
                 "type": null,
                 "categoryId": null,
+                "paymentMethodId": null,
                 "amount": null,
                 "memo": "$tooLongMemo",
                 "displayOrder": -1
@@ -330,6 +402,7 @@ class TransactionMonthlySaveApiTests {
             "[0].date",
             "[0].type",
             "[0].categoryId",
+            "[0].paymentMethodId",
             "[0].amount",
             "[0].memo",
             "[0].displayOrder",
@@ -365,6 +438,7 @@ class TransactionMonthlySaveApiTests {
                 "date": "2026/07/01",
                 "type": "EXPENSE",
                 "categoryId": ${category.id},
+                "paymentMethodId": ${defaultPaymentMethod().id},
                 "amount": 1000,
                 "memo": "日付形式不正",
                 "displayOrder": 1
@@ -392,6 +466,7 @@ class TransactionMonthlySaveApiTests {
                 "date": "2026-07-01",
                 "type": "EXPENSE",
                 "categoryId": ${category.id},
+                "paymentMethodId": ${defaultPaymentMethod().id},
                 "amount": 1000,
                 "memo": "1件目",
                 "displayOrder": 1
@@ -401,6 +476,7 @@ class TransactionMonthlySaveApiTests {
                 "date": "2026-07-02",
                 "type": "EXPENSE",
                 "categoryId": ${category.id},
+                "paymentMethodId": ${defaultPaymentMethod().id},
                 "amount": 2000,
                 "memo": "2件目",
                 "displayOrder": 2
@@ -435,6 +511,7 @@ class TransactionMonthlySaveApiTests {
     transactionRepository.saveAndFlush(
       TransactionEntity(
         category = category,
+        paymentMethod = defaultPaymentMethod(),
         type = type,
         transactionDate = transactionDate,
         amount = amount,
@@ -442,4 +519,13 @@ class TransactionMonthlySaveApiTests {
         displayOrder = displayOrder,
       )
     )
+
+  private fun defaultPaymentMethod(): PaymentMethodEntity =
+    paymentMethodRepository.findByName("現金") ?: error("Payment method is not found")
+
+  private fun defaultTransferSource(): TransferAccountEntity =
+    transferAccountRepository.findByName("財布") ?: error("Transfer source is not found")
+
+  private fun defaultTransferDestination(): TransferAccountEntity =
+    transferAccountRepository.findByName("銀行口座") ?: error("Transfer destination is not found")
 }

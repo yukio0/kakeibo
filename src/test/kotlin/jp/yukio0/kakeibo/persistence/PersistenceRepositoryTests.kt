@@ -6,6 +6,7 @@ import java.time.temporal.ChronoUnit
 import jp.yukio0.kakeibo.category.CategoryEntity
 import jp.yukio0.kakeibo.category.CategoryRepository
 import jp.yukio0.kakeibo.domain.TransactionType
+import jp.yukio0.kakeibo.paymentmethod.PaymentMethodRepository
 import jp.yukio0.kakeibo.transaction.TransactionEntity
 import jp.yukio0.kakeibo.transaction.TransactionRepository
 import jp.yukio0.kakeibo.trusteddevice.TrustedDeviceEntity
@@ -28,6 +29,8 @@ class PersistenceRepositoryTests {
   @Autowired private lateinit var appUserRepository: AppUserRepository
 
   @Autowired private lateinit var categoryRepository: CategoryRepository
+
+  @Autowired private lateinit var paymentMethodRepository: PaymentMethodRepository
 
   @Autowired private lateinit var transactionRepository: TransactionRepository
 
@@ -54,6 +57,8 @@ class PersistenceRepositoryTests {
       transactionRepository.saveAndFlush(
         TransactionEntity(
           category = category,
+          paymentMethod =
+            paymentMethodRepository.findByName("現金") ?: error("Payment method is not found"),
           type = TransactionType.EXPENSE,
           transactionDate = LocalDate.of(2026, 7, 8),
           amount = 1200,

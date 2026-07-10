@@ -4,6 +4,8 @@ import java.time.LocalDate
 import jp.yukio0.kakeibo.category.CategoryEntity
 import jp.yukio0.kakeibo.category.CategoryRepository
 import jp.yukio0.kakeibo.domain.TransactionType
+import jp.yukio0.kakeibo.paymentmethod.PaymentMethodEntity
+import jp.yukio0.kakeibo.paymentmethod.PaymentMethodRepository
 import kotlin.test.assertEquals
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -17,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional
 class TransactionRepositoryTests {
 
   @Autowired private lateinit var categoryRepository: CategoryRepository
+
+  @Autowired private lateinit var paymentMethodRepository: PaymentMethodRepository
 
   @Autowired private lateinit var transactionRepository: TransactionRepository
 
@@ -71,6 +75,7 @@ class TransactionRepositoryTests {
     transactionRepository.saveAndFlush(
       TransactionEntity(
         category = category,
+        paymentMethod = defaultPaymentMethod(),
         type = TransactionType.EXPENSE,
         transactionDate = transactionDate,
         amount = 1000,
@@ -78,4 +83,7 @@ class TransactionRepositoryTests {
         displayOrder = displayOrder,
       )
     )
+
+  private fun defaultPaymentMethod(): PaymentMethodEntity =
+    paymentMethodRepository.findByName("現金") ?: error("Payment method is not found")
 }
