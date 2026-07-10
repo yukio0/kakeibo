@@ -10,3 +10,8 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+
+kakeibo:
+  initial-user:
+    username: test-user
+    password: test-password

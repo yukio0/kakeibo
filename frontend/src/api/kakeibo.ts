@@ -1,4 +1,4 @@
-import { apiRequest } from './http'
+import { apiRequest, clearCsrfToken } from './http'
 
 export type TransactionType = 'EXPENSE' | 'INCOME' | 'TRANSFER'
 export type CategoryType = Exclude<TransactionType, 'TRANSFER'>
@@ -74,8 +74,49 @@ export type MonthlySummary = {
   balance: number
 }
 
+export type AuthUser = {
+  username: string
+  twoFactorEnabled: boolean
+}
+
+export type LoginRequest = {
+  username: string
+  password: string
+}
+
+export type ChangePasswordRequest = {
+  currentPassword: string
+  newPassword: string
+  newPasswordConfirm: string
+}
+
 export function getHello(): Promise<string> {
   return apiRequest<string>('/hello')
+}
+
+export function login(request: LoginRequest): Promise<AuthUser> {
+  return apiRequest<AuthUser>('/api/login', {
+    method: 'POST',
+    body: request,
+  })
+}
+
+export async function logout(): Promise<void> {
+  await apiRequest<void>('/api/logout', {
+    method: 'POST',
+  })
+  clearCsrfToken()
+}
+
+export function getCurrentUser(): Promise<AuthUser> {
+  return apiRequest<AuthUser>('/api/me')
+}
+
+export function changePassword(request: ChangePasswordRequest): Promise<void> {
+  return apiRequest<void>('/api/me/password', {
+    method: 'PUT',
+    body: request,
+  })
 }
 
 export function getCategories(): Promise<Category[]> {

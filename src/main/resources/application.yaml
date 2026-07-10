@@ -16,3 +16,16 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+
+server:
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: strict
+        secure: ${SESSION_COOKIE_SECURE:false}
+
+kakeibo:
+  initial-user:
+    username: ${KAKEIBO_INITIAL_USERNAME:}
+    password: ${KAKEIBO_INITIAL_PASSWORD:}

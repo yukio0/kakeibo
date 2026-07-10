@@ -8,3 +8,5 @@ class ApiValidationException(
 ) : RuntimeException(message)
 
 class ResourceNotFoundException(message: String) : RuntimeException(message)
+
+class UnauthorizedException(message: String) : RuntimeException(message)

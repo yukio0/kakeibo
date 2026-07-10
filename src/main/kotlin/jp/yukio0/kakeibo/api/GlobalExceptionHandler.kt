@@ -69,6 +69,11 @@ class GlobalExceptionHandler {
     ResponseEntity.status(HttpStatus.NOT_FOUND)
       .body(ApiErrorResponse(message = exception.message ?: "対象データが見つかりません"))
 
+  @ExceptionHandler(UnauthorizedException::class)
+  fun handleUnauthorized(exception: UnauthorizedException): ResponseEntity<ApiErrorResponse> =
+    ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+      .body(ApiErrorResponse(message = exception.message ?: "認証が必要です"))
+
   @ExceptionHandler(Exception::class)
   fun handleUnexpectedException(exception: Exception): ResponseEntity<ApiErrorResponse> {
     logger.error("Unhandled API exception", exception)

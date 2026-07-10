@@ -1,6 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { authState, loadCurrentUser } from '@/auth'
 import CategoryView from '@/views/CategoryView.vue'
+import LoginView from '@/views/LoginView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
+import PasswordChangeView from '@/views/PasswordChangeView.vue'
 import PaymentMethodView from '@/views/PaymentMethodView.vue'
 import TransferAccountView from '@/views/TransferAccountView.vue'
 import TransactionView from '@/views/TransactionView.vue'
@@ -14,6 +17,14 @@ export const router = createRouter({
       component: TransactionView,
     },
     {
+      path: '/login',
+      name: 'login',
+      component: LoginView,
+      meta: {
+        public: true,
+      },
+    },
+    {
       path: '/categories',
       name: 'categories',
       component: CategoryView,
@@ -22,6 +33,11 @@ export const router = createRouter({
       path: '/payment-methods',
       name: 'payment-methods',
       component: PaymentMethodView,
+    },
+    {
+      path: '/password',
+      name: 'password',
+      component: PasswordChangeView,
     },
     {
       path: '/transfers',
@@ -34,4 +50,29 @@ export const router = createRouter({
       component: NotFoundView,
     },
   ],
+})
+
+router.beforeEach(async (to) => {
+  if (!authState.loaded) {
+    await loadCurrentUser()
+  }
+
+  if (to.meta.public) {
+    if (to.name === 'login' && authState.user) {
+      return { name: 'home' }
+    }
+
+    return true
+  }
+
+  if (!authState.user) {
+    return {
+      name: 'login',
+      query: {
+        redirect: to.fullPath,
+      },
+    }
+  }
+
+  return true
 })
