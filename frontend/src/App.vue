@@ -20,9 +20,11 @@ async function handleLogout(): Promise<void> {
           <RouterLink to="/categories">カテゴリ管理</RouterLink>
           <RouterLink to="/payment-methods">支払い方法管理</RouterLink>
           <RouterLink to="/transfers">振替管理</RouterLink>
-          <RouterLink to="/password">パスワード変更</RouterLink>
+          <RouterLink v-if="authState.security?.authenticationEnabled" to="/password">パスワード変更</RouterLink>
+          <RouterLink v-if="authState.security?.twoFactorEnabled" to="/mfa/settings">2FA設定</RouterLink>
+          <RouterLink v-if="authState.security?.twoFactorEnabled" to="/trusted-devices">信頼済み端末</RouterLink>
         </nav>
-        <div class="app-user-actions">
+        <div v-if="authState.security?.authenticationEnabled" class="app-user-actions">
           <span class="app-user-name">{{ authState.user.username }}</span>
           <button class="logout-button" type="button" @click="handleLogout">ログアウト</button>
         </div>

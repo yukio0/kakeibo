@@ -13,6 +13,16 @@ data class ChangePasswordRequest(
   @field:NotBlank(message = "確認用パスワードを入力してください") val newPasswordConfirm: String?,
 )
 
+data class LoginResponse(
+  val mfaRequired: Boolean,
+  val user: AuthUserResponse?,
+)
+
+data class SecuritySettingsResponse(
+  val authenticationEnabled: Boolean,
+  val twoFactorEnabled: Boolean,
+)
+
 data class AuthUserResponse(
   val username: String,
   val twoFactorEnabled: Boolean,

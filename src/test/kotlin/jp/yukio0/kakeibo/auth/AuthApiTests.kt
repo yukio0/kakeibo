@@ -251,7 +251,8 @@ class AuthApiTests {
         )
         .andExpect(status().isOk)
         .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-        .andExpect(jsonPath("$.username").value(username))
+        .andExpect(jsonPath("$.mfaRequired").value(false))
+        .andExpect(jsonPath("$.user.username").value(username))
         .andReturn()
 
     return result.request.session as MockHttpSession

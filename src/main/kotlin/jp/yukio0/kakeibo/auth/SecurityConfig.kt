@@ -19,7 +19,7 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository
 
 @Configuration
 @EnableWebSecurity
-class SecurityConfig {
+class SecurityConfig(private val securityFeatureProperties: SecurityFeatureProperties) {
 
   @Bean fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder()
 
@@ -45,27 +45,38 @@ class SecurityConfig {
         securityContext.securityContextRepository(securityContextRepository)
       }
       .authorizeHttpRequests { authorize ->
-        authorize
-          .requestMatchers(HttpMethod.GET, "/hello", "/api/csrf")
-          .permitAll()
-          .requestMatchers(HttpMethod.POST, "/api/login")
-          .permitAll()
-          .requestMatchers(
-            HttpMethod.GET,
-            "/",
-            "/index.html",
-            "/login",
-            "/categories",
-            "/payment-methods",
-            "/password",
-            "/transfers",
-            "/assets/**",
-            "/favicon.ico",
-            "/vite.svg",
-          )
-          .permitAll()
-          .anyRequest()
-          .authenticated()
+        if (securityFeatureProperties.authenticationEnabled) {
+          authorize
+            .requestMatchers(HttpMethod.GET, "/hello", "/api/csrf", "/api/security-settings")
+            .permitAll()
+            .requestMatchers(HttpMethod.POST, "/api/login")
+            .permitAll()
+            .requestMatchers(HttpMethod.POST, "/api/mfa/verify")
+            .permitAll()
+            .requestMatchers(HttpMethod.POST, "/api/e2e/reset")
+            .permitAll()
+            .requestMatchers(
+              HttpMethod.GET,
+              "/",
+              "/index.html",
+              "/login",
+              "/mfa/verify",
+              "/categories",
+              "/mfa/settings",
+              "/payment-methods",
+              "/password",
+              "/transfers",
+              "/trusted-devices",
+              "/assets/**",
+              "/favicon.ico",
+              "/vite.svg",
+            )
+            .permitAll()
+            .anyRequest()
+            .authenticated()
+        } else {
+          authorize.anyRequest().permitAll()
+        }
       }
       .formLogin { formLogin -> formLogin.disable() }
       .httpBasic { httpBasic -> httpBasic.disable() }

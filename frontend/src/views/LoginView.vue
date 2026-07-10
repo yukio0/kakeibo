@@ -24,7 +24,17 @@ async function submitLogin(): Promise<void> {
   errorMessage.value = null
 
   try {
-    await login(form.username, form.password)
+    const response = await login(form.username, form.password)
+    if (response.mfaRequired) {
+      await router.replace({
+        name: 'mfa-verify',
+        query: {
+          redirect: redirectPath.value,
+        },
+      })
+      return
+    }
+
     await router.replace(redirectPath.value)
   } catch (error) {
     if (error instanceof ApiError) {

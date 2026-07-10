@@ -5,7 +5,9 @@ import jakarta.servlet.http.HttpServletResponse
 import jakarta.validation.Valid
 import jp.yukio0.kakeibo.api.ApiFieldErrorResponse
 import jp.yukio0.kakeibo.api.ApiValidationException
+import jp.yukio0.kakeibo.api.BadRequestException
 import jp.yukio0.kakeibo.api.UnauthorizedException
+import jp.yukio0.kakeibo.trusteddevice.TrustedDeviceService
 import jp.yukio0.kakeibo.user.AppUserEntity
 import jp.yukio0.kakeibo.user.AppUserRepository
 import org.springframework.http.HttpStatus
@@ -33,6 +35,8 @@ class AuthController(
   private val appUserRepository: AppUserRepository,
   private val passwordEncoder: PasswordEncoder,
   private val securityContextRepository: SecurityContextRepository,
+  private val trustedDeviceService: TrustedDeviceService,
+  private val securityFeatureProperties: SecurityFeatureProperties,
 ) {
 
   @PostMapping("/login")
@@ -40,7 +44,14 @@ class AuthController(
     @Valid @RequestBody request: LoginRequest,
     httpRequest: HttpServletRequest,
     httpResponse: HttpServletResponse,
-  ): AuthUserResponse {
+  ): LoginResponse {
+    if (!securityFeatureProperties.authenticationEnabled) {
+      return LoginResponse(
+        mfaRequired = false,
+        user = disabledAuthenticationUser(),
+      )
+    }
+
     val authentication =
       try {
         authenticationManager.authenticate(
@@ -53,36 +64,74 @@ class AuthController(
         throw UnauthorizedException("ユーザー名またはパスワードが正しくありません")
       }
 
+    val appUser = authentication.toAppUser()
     val session = httpRequest.getSession(true)
     if (!session.isNew) {
       httpRequest.changeSessionId()
     }
 
-    val securityContext = SecurityContextHolder.createEmptyContext()
-    securityContext.authentication = authentication
-    SecurityContextHolder.setContext(securityContext)
-    securityContextRepository.saveContext(securityContext, httpRequest, httpResponse)
+    session.removeAttribute(MfaSessionAttributes.PENDING_SETUP_SECRET)
+    session.removeAttribute(MfaSessionAttributes.PENDING_LOGIN_USERNAME)
 
-    return authentication.toResponse()
+    if (
+      securityFeatureProperties.twoFactorEnabled &&
+        appUser.twoFactorEnabled &&
+        !appUser.twoFactorSecret.isNullOrBlank()
+    ) {
+      if (trustedDeviceService.isTrustedDevice(appUser, httpRequest, httpResponse)) {
+        saveAuthentication(authentication, httpRequest, httpResponse)
+        return LoginResponse(
+          mfaRequired = false,
+          user = appUser.toResponse(),
+        )
+      }
+
+      session.setAttribute(MfaSessionAttributes.PENDING_LOGIN_USERNAME, appUser.username)
+      SecurityContextHolder.clearContext()
+      return LoginResponse(
+        mfaRequired = true,
+        user = null,
+      )
+    }
+
+    saveAuthentication(authentication, httpRequest, httpResponse)
+
+    return LoginResponse(
+      mfaRequired = false,
+      user = appUser.toResponse(),
+    )
   }
 
   @PostMapping("/logout")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   fun logout(httpRequest: HttpServletRequest, httpResponse: HttpServletResponse) {
+    if (!securityFeatureProperties.authenticationEnabled) {
+      return
+    }
+
     SecurityContextLogoutHandler()
       .logout(httpRequest, httpResponse, SecurityContextHolder.getContext().authentication)
   }
 
   @GetMapping("/me")
   fun me(authentication: Authentication?): AuthUserResponse =
-    authentication?.toResponse() ?: throw UnauthorizedException("認証が必要です")
+    if (securityFeatureProperties.authenticationEnabled) {
+      authentication?.toResponse() ?: throw UnauthorizedException("認証が必要です")
+    } else {
+      disabledAuthenticationUser()
+    }
 
   @PutMapping("/me/password")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   fun changePassword(
     authentication: Authentication?,
+    httpResponse: HttpServletResponse,
     @Valid @RequestBody request: ChangePasswordRequest,
   ) {
+    if (!securityFeatureProperties.authenticationEnabled) {
+      throw BadRequestException("ログイン認証が無効です")
+    }
+
     val appUser = authentication?.toAppUser() ?: throw UnauthorizedException("認証が必要です")
 
     val errors = mutableListOf<ApiFieldErrorResponse>()
@@ -117,6 +166,7 @@ class AuthController(
 
     appUser.passwordHash = passwordEncoder.encode(newPassword) ?: error("Password hash is empty")
     appUserRepository.save(appUser)
+    trustedDeviceService.revokeAllTrustedDevices(appUser, httpResponse)
   }
 
   @GetMapping("/csrf")
@@ -127,13 +177,39 @@ class AuthController(
       token = csrfToken.token,
     )
 
+  @GetMapping("/security-settings")
+  fun securitySettings(): SecuritySettingsResponse =
+    SecuritySettingsResponse(
+      authenticationEnabled = securityFeatureProperties.authenticationEnabled,
+      twoFactorEnabled = securityFeatureProperties.twoFactorEnabled,
+    )
+
   private fun Authentication.toResponse(): AuthUserResponse {
     val appUser = toAppUser()
+    return appUser.toResponse()
+  }
 
-    return AuthUserResponse(
-      username = appUser.username,
-      twoFactorEnabled = appUser.twoFactorEnabled,
+  private fun AppUserEntity.toResponse(): AuthUserResponse =
+    AuthUserResponse(
+      username = username,
+      twoFactorEnabled = securityFeatureProperties.twoFactorEnabled && twoFactorEnabled,
     )
+
+  private fun disabledAuthenticationUser(): AuthUserResponse =
+    AuthUserResponse(
+      username = "認証無効",
+      twoFactorEnabled = false,
+    )
+
+  private fun saveAuthentication(
+    authentication: Authentication,
+    httpRequest: HttpServletRequest,
+    httpResponse: HttpServletResponse,
+  ) {
+    val securityContext = SecurityContextHolder.createEmptyContext()
+    securityContext.authentication = authentication
+    SecurityContextHolder.setContext(securityContext)
+    securityContextRepository.saveContext(securityContext, httpRequest, httpResponse)
   }
 
   private fun Authentication.toAppUser(): AppUserEntity =

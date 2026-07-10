@@ -125,14 +125,94 @@ button:disabled {
 }
 
 .login-card,
+.mfa-settings-card,
+.mfa-verify-card,
 .password-change-card {
   width: min(480px, 100%);
   margin: 0 auto;
 }
 
 .login-form,
+.mfa-settings-form,
+.mfa-verify-form,
 .password-change-form {
   gap: 1.25rem;
+}
+
+.mfa-status {
+  margin: 0;
+  color: #475569;
+  font-weight: 600;
+}
+
+.mfa-enabled {
+  color: #047857;
+}
+
+.mfa-disabled {
+  color: #b45309;
+}
+
+.mfa-setup {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.mfa-qr-code {
+  width: min(240px, 100%);
+  height: auto;
+  justify-self: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  background: #ffffff;
+}
+
+.mfa-code-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.danger-button {
+  background: #dc2626;
+}
+
+.danger-button:hover {
+  background: #b91c1c;
+}
+
+.trusted-device-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.trusted-device-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.trusted-device-table th,
+.trusted-device-table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.trusted-device-table th {
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.current-device-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  background: #dcfce7;
+  color: #047857;
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
 .hero-section {
@@ -213,6 +293,24 @@ button:disabled {
   gap: 0.4rem;
   color: #374151;
   font-weight: 600;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #374151;
+  font-weight: 600;
+}
+
+.checkbox-field input {
+  width: auto;
+  min-height: auto;
+}
+
+.empty-message {
+  margin: 0;
+  color: #64748b;
 }
 
 input,

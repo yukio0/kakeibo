@@ -23,9 +23,12 @@ server:
       cookie:
         http-only: true
         same-site: strict
-        secure: ${SESSION_COOKIE_SECURE:false}
+        secure: "${SESSION_COOKIE_SECURE:false}"
 
 kakeibo:
+  security:
+    authentication-enabled: "${KAKEIBO_AUTHENTICATION_ENABLED:true}"
+    two-factor-enabled: "${KAKEIBO_TWO_FACTOR_ENABLED:true}"
   initial-user:
-    username: ${KAKEIBO_INITIAL_USERNAME:}
-    password: ${KAKEIBO_INITIAL_PASSWORD:}
+    username: "${KAKEIBO_INITIAL_USERNAME:}"
+    password: "${KAKEIBO_INITIAL_PASSWORD:}"

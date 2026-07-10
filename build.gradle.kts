@@ -7,6 +7,8 @@ plugins {
   id("com.diffplug.spotless") version "8.8.0"
 }
 
+val e2eRuntimeOnly = configurations.create("e2eRuntimeOnly")
+
 group = "jp.yukio0"
 
 version = "0.0.1-SNAPSHOT"
@@ -22,6 +24,8 @@ repositories {
 }
 
 dependencies {
+  e2eRuntimeOnly("com.h2database:h2")
+  implementation("com.google.zxing:core:3.5.3")
   implementation("org.springframework.boot:spring-boot-starter-data-jpa")
   implementation("org.springframework.boot:spring-boot-starter-security")
   implementation("org.springframework.boot:spring-boot-starter-validation")
@@ -35,6 +39,10 @@ dependencies {
   testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
   testRuntimeOnly("com.h2database:h2")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
+  classpath = classpath + e2eRuntimeOnly
 }
 
 kotlin {

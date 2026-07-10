@@ -69,6 +69,7 @@ class PersistenceRepositoryTests {
     val trustedDevice =
       trustedDeviceRepository.saveAndFlush(
         TrustedDeviceEntity(
+          appUser = user,
           tokenHash = "a".repeat(64),
           deviceName = "Repository Test",
           expiresAt = Instant.now().plus(30, ChronoUnit.DAYS),
@@ -95,7 +96,7 @@ class PersistenceRepositoryTests {
     assertNotNull(trustedDevice.createdAt)
     assertEquals(
       trustedDevice.id,
-      trustedDeviceRepository.findByTokenHash(trustedDevice.tokenHash)?.id,
+      trustedDeviceRepository.findByTokenHashAndAppUser(trustedDevice.tokenHash, user)?.id,
     )
   }
 }

@@ -90,12 +90,50 @@ export type ChangePasswordRequest = {
   newPasswordConfirm: string
 }
 
+export type LoginResponse = {
+  mfaRequired: boolean
+  user: AuthUser | null
+}
+
+export type MfaStatus = {
+  enabled: boolean
+}
+
+export type SecuritySettings = {
+  authenticationEnabled: boolean
+  twoFactorEnabled: boolean
+}
+
+export type MfaSetup = {
+  secret: string
+  otpauthUri: string
+  qrCodeSvg: string
+}
+
+export type MfaCodeRequest = {
+  code: string
+}
+
+export type MfaVerifyRequest = {
+  code: string
+  trustDevice: boolean
+}
+
+export type TrustedDevice = {
+  id: number
+  deviceName: string
+  lastUsedAt: string | null
+  expiresAt: string
+  createdAt: string | null
+  current: boolean
+}
+
 export function getHello(): Promise<string> {
   return apiRequest<string>('/hello')
 }
 
-export function login(request: LoginRequest): Promise<AuthUser> {
-  return apiRequest<AuthUser>('/api/login', {
+export function login(request: LoginRequest): Promise<LoginResponse> {
+  return apiRequest<LoginResponse>('/api/login', {
     method: 'POST',
     body: request,
   })
@@ -112,10 +150,64 @@ export function getCurrentUser(): Promise<AuthUser> {
   return apiRequest<AuthUser>('/api/me')
 }
 
+export function getSecuritySettings(): Promise<SecuritySettings> {
+  return apiRequest<SecuritySettings>('/api/security-settings')
+}
+
 export function changePassword(request: ChangePasswordRequest): Promise<void> {
   return apiRequest<void>('/api/me/password', {
     method: 'PUT',
     body: request,
+  })
+}
+
+export function getMfaStatus(): Promise<MfaStatus> {
+  return apiRequest<MfaStatus>('/api/mfa/status')
+}
+
+export function setupMfa(): Promise<MfaSetup> {
+  return apiRequest<MfaSetup>('/api/mfa/setup')
+}
+
+export function enableMfa(request: MfaCodeRequest): Promise<void> {
+  return apiRequest<void>('/api/mfa/enable', {
+    method: 'POST',
+    body: request,
+  })
+}
+
+export function verifyMfa(request: MfaVerifyRequest): Promise<AuthUser> {
+  return apiRequest<AuthUser>('/api/mfa/verify', {
+    method: 'POST',
+    body: request,
+  })
+}
+
+export function disableMfa(): Promise<void> {
+  return apiRequest<void>('/api/mfa/disable', {
+    method: 'POST',
+  })
+}
+
+export function getTrustedDevices(): Promise<TrustedDevice[]> {
+  return apiRequest<TrustedDevice[]>('/api/trusted-devices')
+}
+
+export function revokeTrustedDevice(id: number): Promise<void> {
+  return apiRequest<void>(`/api/trusted-devices/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export function revokeCurrentTrustedDevice(): Promise<void> {
+  return apiRequest<void>('/api/trusted-devices/current', {
+    method: 'DELETE',
+  })
+}
+
+export function revokeAllTrustedDevices(): Promise<void> {
+  return apiRequest<void>('/api/trusted-devices', {
+    method: 'DELETE',
   })
 }
 
