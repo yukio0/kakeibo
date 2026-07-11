@@ -147,11 +147,11 @@ function toMessage(error: unknown, fallback: string): string {
           </div>
 
           <div v-else class="mfa-setup">
-            <img class="mfa-qr-code" :src="qrCodeDataUrl" alt="2段階認証設定用QRコード">
+            <img class="mfa-qr-code" :src="qrCodeDataUrl" alt="2段階認証設定用QRコード" />
 
             <label class="field">
               <span>手動入力用secret</span>
-              <input :value="setup.secret" type="text" readonly>
+              <input :value="setup.secret" type="text" readonly />
             </label>
 
             <form class="mfa-code-form" @submit.prevent="submitEnable">
@@ -166,7 +166,7 @@ function toMessage(error: unknown, fallback: string): string {
                   pattern="[0-9]{6}"
                   required
                   :disabled="processing"
-                >
+                />
                 <small v-if="codeError" class="field-error">{{ codeError }}</small>
               </label>
 

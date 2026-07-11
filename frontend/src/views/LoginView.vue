@@ -64,7 +64,7 @@ async function submitLogin(): Promise<void> {
           autocomplete="username"
           required
           :disabled="submitting"
-        >
+        />
       </label>
 
       <label class="field">
@@ -75,7 +75,7 @@ async function submitLogin(): Promise<void> {
           autocomplete="current-password"
           required
           :disabled="submitting"
-        >
+        />
       </label>
 
       <p v-if="errorMessage" class="message error">{{ errorMessage }}</p>

@@ -526,7 +526,6 @@ function defaultNewRowDate(): string {
 
   return monthStartDate.value
 }
-
 </script>
 
 <template>
@@ -553,7 +552,7 @@ function defaultNewRowDate(): string {
           :value="monthInputValue"
           :disabled="loading || saving"
           @change="handleMonthInput"
-        >
+        />
       </label>
 
       <button
@@ -581,9 +580,7 @@ function defaultNewRowDate(): string {
       </div>
     </div>
 
-    <p class="summary-note">
-      API集計: {{ persistedSummaryText() }}
-    </p>
+    <p class="summary-note">API集計: {{ persistedSummaryText() }}</p>
   </section>
 
   <section class="toolbar transaction-toolbar">
@@ -640,11 +637,7 @@ function defaultNewRowDate(): string {
           <tr v-if="rows.length === 0">
             <td colspan="7" class="empty-cell">この月の家計簿データはまだありません。</td>
           </tr>
-          <tr
-            v-for="row in rows"
-            :key="row.localKey"
-            :class="{ 'deleted-row': row.deleted }"
-          >
+          <tr v-for="row in rows" :key="row.localKey" :class="{ 'deleted-row': row.deleted }">
             <td>
               <input
                 v-model="row.date"
@@ -662,7 +655,7 @@ function defaultNewRowDate(): string {
                 @focus="startCellEdit(row, 'date')"
                 @input="handleCellInput(row, 'date')"
                 @keydown="handleCellKeydown($event, row, 'date')"
-              >
+              />
               <small v-if="rowErrors[row.localKey]?.date" class="field-error">
                 {{ rowErrors[row.localKey]?.date }}
               </small>
@@ -703,11 +696,7 @@ function defaultNewRowDate(): string {
                 @change="handleCellInput(row, 'categoryId')"
                 @keydown="handleCellKeydown($event, row, 'categoryId')"
               >
-                <option
-                  v-for="option in categoryOptions(row)"
-                  :key="option.id"
-                  :value="option.id"
-                >
+                <option v-for="option in categoryOptions(row)" :key="option.id" :value="option.id">
                   {{ option.name }}
                 </option>
               </select>
@@ -757,7 +746,7 @@ function defaultNewRowDate(): string {
                 @focus="startCellEdit(row, 'amount')"
                 @input="handleCellInput(row, 'amount')"
                 @keydown="handleCellKeydown($event, row, 'amount')"
-              >
+              />
               <small v-if="rowErrors[row.localKey]?.amount" class="field-error">
                 {{ rowErrors[row.localKey]?.amount }}
               </small>

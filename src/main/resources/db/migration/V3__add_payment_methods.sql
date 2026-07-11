@@ -8,10 +8,10 @@ CREATE TABLE payment_methods (
     CONSTRAINT uq_payment_methods_name UNIQUE (name)
 );
 
-CREATE INDEX idx_payment_methods_display_order
-    ON payment_methods (display_order, id);
+CREATE INDEX idx_payment_methods_display_order ON payment_methods (display_order, id);
 
-INSERT INTO payment_methods (name, display_order)
+INSERT INTO
+    payment_methods (name, display_order)
 VALUES
     ('現金', 10),
     ('カード', 20),
@@ -19,17 +19,24 @@ VALUES
     ('その他', 40);
 
 ALTER TABLE transactions
-    ADD COLUMN payment_method_id BIGINT;
+ADD COLUMN payment_method_id BIGINT;
 
 UPDATE transactions
-SET payment_method_id = (SELECT id FROM payment_methods WHERE name = '現金');
+SET
+    payment_method_id = (
+        SELECT
+            id
+        FROM
+            payment_methods
+        WHERE
+            name = '現金'
+    );
 
 ALTER TABLE transactions
-    ALTER COLUMN payment_method_id SET NOT NULL;
+ALTER COLUMN payment_method_id
+SET NOT NULL;
 
 ALTER TABLE transactions
-    ADD CONSTRAINT fk_transactions_payment_method
-        FOREIGN KEY (payment_method_id) REFERENCES payment_methods (id) ON DELETE RESTRICT;
+ADD CONSTRAINT fk_transactions_payment_method FOREIGN KEY (payment_method_id) REFERENCES payment_methods (id) ON DELETE RESTRICT;
 
-CREATE INDEX idx_transactions_payment_method_id
-    ON transactions (payment_method_id);
+CREATE INDEX idx_transactions_payment_method_id ON transactions (payment_method_id);

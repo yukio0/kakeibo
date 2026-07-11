@@ -102,7 +102,7 @@ watch(() => createForm.type, refreshCreateDisplayOrder)
     <form class="form-grid" @submit.prevent="submitCreate">
       <label class="field">
         <span>カテゴリ名</span>
-        <input v-model="createForm.name" type="text" autocomplete="off">
+        <input v-model="createForm.name" type="text" autocomplete="off" />
         <small v-if="createErrors.name" class="field-error">{{ createErrors.name }}</small>
       </label>
 
@@ -117,7 +117,7 @@ watch(() => createForm.type, refreshCreateDisplayOrder)
 
       <label class="field">
         <span>表示順</span>
-        <input v-model.number="createForm.displayOrder" type="number" min="0">
+        <input v-model.number="createForm.displayOrder" type="number" min="0" />
         <small v-if="createErrors.displayOrder" class="field-error">
           {{ createErrors.displayOrder }}
         </small>
@@ -171,7 +171,7 @@ watch(() => createForm.type, refreshCreateDisplayOrder)
                   autocomplete="off"
                   @input="scheduleAutoSave(category)"
                   @blur="save(category)"
-                >
+                />
                 <small v-if="editErrors[category.id]?.name" class="field-error">
                   {{ editErrors[category.id]?.name }}
                 </small>
@@ -196,7 +196,7 @@ watch(() => createForm.type, refreshCreateDisplayOrder)
                   min="0"
                   @input="scheduleAutoSave(category)"
                   @blur="save(category)"
-                >
+                />
                 <small v-if="editErrors[category.id]?.displayOrder" class="field-error">
                   {{ editErrors[category.id]?.displayOrder }}
                 </small>

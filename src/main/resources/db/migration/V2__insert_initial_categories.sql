@@ -1,4 +1,5 @@
-INSERT INTO categories (name, type, display_order)
+INSERT INTO
+    categories (name, type, display_order)
 VALUES
     ('食費', 'EXPENSE', 10),
     ('交通費', 'EXPENSE', 20),

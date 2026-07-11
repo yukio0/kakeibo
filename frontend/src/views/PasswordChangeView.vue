@@ -88,7 +88,7 @@ function clearFieldErrors(): void {
           autocomplete="current-password"
           required
           :disabled="submitting"
-        >
+        />
         <small v-if="fieldErrors.currentPassword" class="field-error">
           {{ fieldErrors.currentPassword }}
         </small>
@@ -102,7 +102,7 @@ function clearFieldErrors(): void {
           autocomplete="new-password"
           required
           :disabled="submitting"
-        >
+        />
         <small v-if="fieldErrors.newPassword" class="field-error">
           {{ fieldErrors.newPassword }}
         </small>
@@ -116,7 +116,7 @@ function clearFieldErrors(): void {
           autocomplete="new-password"
           required
           :disabled="submitting"
-        >
+        />
         <small v-if="fieldErrors.newPasswordConfirm" class="field-error">
           {{ fieldErrors.newPasswordConfirm }}
         </small>

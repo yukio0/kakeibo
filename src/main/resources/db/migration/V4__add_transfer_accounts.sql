@@ -8,61 +8,58 @@ CREATE TABLE transfer_accounts (
     CONSTRAINT uq_transfer_accounts_name UNIQUE (name)
 );
 
-CREATE INDEX idx_transfer_accounts_display_order
-    ON transfer_accounts (display_order, id);
+CREATE INDEX idx_transfer_accounts_display_order ON transfer_accounts (display_order, id);
 
-INSERT INTO transfer_accounts (name, display_order)
+INSERT INTO
+    transfer_accounts (name, display_order)
 VALUES
     ('財布', 10),
     ('銀行口座', 20);
 
 ALTER TABLE transactions
-    DROP CONSTRAINT ck_transactions_type;
+DROP CONSTRAINT ck_transactions_type;
 
 ALTER TABLE transactions
-    ADD CONSTRAINT ck_transactions_type CHECK (type IN ('EXPENSE', 'INCOME', 'TRANSFER'));
+ADD CONSTRAINT ck_transactions_type CHECK (type IN ('EXPENSE', 'INCOME', 'TRANSFER'));
 
 ALTER TABLE transactions
-    ALTER COLUMN category_id DROP NOT NULL;
+ALTER COLUMN category_id
+DROP NOT NULL;
 
 ALTER TABLE transactions
-    ALTER COLUMN payment_method_id DROP NOT NULL;
+ALTER COLUMN payment_method_id
+DROP NOT NULL;
 
 ALTER TABLE transactions
-    ADD COLUMN transfer_source_id BIGINT;
+ADD COLUMN transfer_source_id BIGINT;
 
 ALTER TABLE transactions
-    ADD COLUMN transfer_destination_id BIGINT;
+ADD COLUMN transfer_destination_id BIGINT;
 
 ALTER TABLE transactions
-    ADD CONSTRAINT fk_transactions_transfer_source
-        FOREIGN KEY (transfer_source_id) REFERENCES transfer_accounts (id) ON DELETE RESTRICT;
+ADD CONSTRAINT fk_transactions_transfer_source FOREIGN KEY (transfer_source_id) REFERENCES transfer_accounts (id) ON DELETE RESTRICT;
 
 ALTER TABLE transactions
-    ADD CONSTRAINT fk_transactions_transfer_destination
-        FOREIGN KEY (transfer_destination_id) REFERENCES transfer_accounts (id) ON DELETE RESTRICT;
+ADD CONSTRAINT fk_transactions_transfer_destination FOREIGN KEY (transfer_destination_id) REFERENCES transfer_accounts (id) ON DELETE RESTRICT;
 
 ALTER TABLE transactions
-    ADD CONSTRAINT ck_transactions_targets_by_type CHECK (
-        (
-            type IN ('EXPENSE', 'INCOME')
-            AND category_id IS NOT NULL
-            AND payment_method_id IS NOT NULL
-            AND transfer_source_id IS NULL
-            AND transfer_destination_id IS NULL
-        )
-        OR
-        (
-            type = 'TRANSFER'
-            AND category_id IS NULL
-            AND payment_method_id IS NULL
-            AND transfer_source_id IS NOT NULL
-            AND transfer_destination_id IS NOT NULL
-        )
-    );
+ADD CONSTRAINT ck_transactions_targets_by_type CHECK (
+    (
+        type IN ('EXPENSE', 'INCOME')
+        AND category_id IS NOT NULL
+        AND payment_method_id IS NOT NULL
+        AND transfer_source_id IS NULL
+        AND transfer_destination_id IS NULL
+    )
+    OR (
+        type = 'TRANSFER'
+        AND category_id IS NULL
+        AND payment_method_id IS NULL
+        AND transfer_source_id IS NOT NULL
+        AND transfer_destination_id IS NOT NULL
+    )
+);
 
-CREATE INDEX idx_transactions_transfer_source_id
-    ON transactions (transfer_source_id);
+CREATE INDEX idx_transactions_transfer_source_id ON transactions (transfer_source_id);
 
-CREATE INDEX idx_transactions_transfer_destination_id
-    ON transactions (transfer_destination_id);
+CREATE INDEX idx_transactions_transfer_destination_id ON transactions (transfer_destination_id);

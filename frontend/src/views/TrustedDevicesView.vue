@@ -99,14 +99,17 @@ function toMessage(error: unknown, fallback: string): string {
           <button type="button" :disabled="processing" @click="revokeCurrentDevice">
             現在の端末を解除
           </button>
-          <button type="button" class="danger-button" :disabled="processing" @click="revokeAllDevices">
+          <button
+            type="button"
+            class="danger-button"
+            :disabled="processing"
+            @click="revokeAllDevices"
+          >
             すべて解除
           </button>
         </div>
 
-        <p v-if="trustedDevices.length === 0" class="empty-message">
-          信頼済み端末はありません。
-        </p>
+        <p v-if="trustedDevices.length === 0" class="empty-message">信頼済み端末はありません。</p>
 
         <table v-else class="trusted-device-table">
           <thead>

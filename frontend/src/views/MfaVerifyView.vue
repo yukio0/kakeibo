@@ -62,12 +62,12 @@ async function submitVerify(): Promise<void> {
           pattern="[0-9]{6}"
           required
           :disabled="submitting"
-        >
+        />
         <small v-if="codeError" class="field-error">{{ codeError }}</small>
       </label>
 
       <label class="checkbox-field">
-        <input v-model="trustDevice" type="checkbox" :disabled="submitting">
+        <input v-model="trustDevice" type="checkbox" :disabled="submitting" />
         <span>この端末では30日間2段階認証を省略する</span>
       </label>
 

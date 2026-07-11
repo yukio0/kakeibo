@@ -83,6 +83,32 @@ kotlin {
   }
 }
 
+val prettierPackages = mapOf("prettier" to "3.6.2")
+
+val sqlPrettierPackages = prettierPackages + mapOf("prettier-plugin-sql" to "0.19.1")
+
+// prettier-plugin-sql は sql-formatter を包んでいる。識別子は原文のまま残し、キーワードだけ大文字に揃える。
+val sqlPrettierConfig =
+  mapOf(
+    "plugins" to listOf("prettier-plugin-sql"),
+    "parser" to "sql",
+    "language" to "postgresql",
+    "keywordCase" to "upper",
+    "dataTypeCase" to "upper",
+    "functionCase" to "upper",
+    "identifierCase" to "preserve",
+    "tabWidth" to 4,
+  )
+
+// node_modules や dist、Playwrightの出力など、npmやツールが生成したファイルは整形しない。
+val generatedWebFiles =
+  arrayOf(
+    "**/node_modules/**",
+    "frontend/dist/**",
+    "e2e/playwright-report/**",
+    "e2e/test-results/**",
+  )
+
 spotless {
   kotlin {
     target("src/**/*.kt")
@@ -94,6 +120,34 @@ spotless {
   kotlinGradle {
     target("*.gradle.kts", "gradle/**/*.gradle.kts")
     ktfmt().googleStyle()
+    trimTrailingWhitespace()
+    endWithNewline()
+  }
+
+  format("frontend") {
+    target(
+      "frontend/**/*.ts",
+      "frontend/**/*.vue",
+      "frontend/**/*.js",
+      "frontend/**/*.css",
+      "frontend/**/*.html",
+    )
+    targetExclude(*generatedWebFiles)
+    prettier(prettierPackages).configFile(rootProject.file(".prettierrc.json"))
+  }
+
+  format("e2e") {
+    target("e2e/**/*.ts")
+    targetExclude(*generatedWebFiles)
+    prettier(prettierPackages).configFile(rootProject.file(".prettierrc.json"))
+  }
+
+  // 注意: Flywayは適用済みマイグレーションの内容からチェックサムを取る。整形で1バイトでも変われば、
+  // 既に適用済みのDBは checksum mismatch で起動しなくなる。既存のマイグレーションを整形し直したときは、
+  // DBを作り直すか `flyway repair` でチェックサムを打ち直すこと。
+  sql {
+    target("src/main/resources/db/migration/*.sql")
+    prettier(sqlPrettierPackages).config(sqlPrettierConfig)
     trimTrailingWhitespace()
     endWithNewline()
   }

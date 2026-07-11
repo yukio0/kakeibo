@@ -262,9 +262,7 @@ export function getTransferAccounts(): Promise<TransferAccount[]> {
   return apiRequest<TransferAccount[]>('/api/transfer-accounts')
 }
 
-export function createTransferAccount(
-  request: TransferAccountRequest,
-): Promise<TransferAccount> {
+export function createTransferAccount(request: TransferAccountRequest): Promise<TransferAccount> {
   return apiRequest<TransferAccount>('/api/transfer-accounts', {
     method: 'POST',
     body: request,

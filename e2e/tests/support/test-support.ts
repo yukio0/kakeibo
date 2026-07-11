@@ -41,6 +41,33 @@ export function waitForMonthlySave(
   })
 }
 
+/**
+ * 新規行を含む保存の後処理が落ち着くまで待つ。アプリはPUT成功後に月次集計を取り直し、その後
+ * requestAnimationFrame で最後に編集したセルへフォーカスを戻す。この非同期のフォーカス復帰が
+ * 次のセル入力と競合すると文字が別セルに入るため、集計取得(GET)の完了とrAF2枚の消化を待って
+ * 復帰を確定させてから次の操作へ進む。
+ *
+ * PUTを起こす操作より前に呼び、返り値をPUT待ちの後に await すること
+ * (呼んだ時点で集計GETの待受が始まるので、応答を取りこぼさない)。
+ */
+export function settleAfterMonthlySave(page: Page): Promise<void> {
+  const summaryReceived = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/summary/monthly') &&
+      response.request().method() === 'GET' &&
+      response.ok(),
+  )
+
+  return summaryReceived.then(() =>
+    page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+        }),
+    ),
+  )
+}
+
 export async function resetE2eData(request: APIRequestContext): Promise<void> {
   const csrfResponse = await request.get('/api/csrf')
   expect(csrfResponse.ok()).toBeTruthy()
@@ -74,11 +101,7 @@ export async function loginThroughMfa(page: Page, trustDevice = false): Promise<
   await expect(page.getByRole('heading', { name: '家計簿入力', exact: true })).toBeVisible()
 }
 
-export async function saveScreenshot(
-  page: Page,
-  testInfo: TestInfo,
-  name: string,
-): Promise<void> {
+export async function saveScreenshot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
   const path = testInfo.outputPath(`${name}.png`)
   await page.screenshot({ path, fullPage: true })
   await testInfo.attach(name, {
@@ -88,9 +111,12 @@ export async function saveScreenshot(
 }
 
 export function findEditableTransactionRow(page: Page) {
-  return page.locator('.transaction-table tbody tr').filter({
-    has: page.locator('input[type="number"]'),
-  }).first()
+  return page
+    .locator('.transaction-table tbody tr')
+    .filter({
+      has: page.locator('input[type="number"]'),
+    })
+    .first()
 }
 
 export function currentLocalDate(): string {

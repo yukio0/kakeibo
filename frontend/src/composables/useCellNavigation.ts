@@ -136,7 +136,9 @@ export function useCellNavigation(options: CellNavigationOptions) {
   ): void {
     const firstError = entries
       .map((entry) => {
-        const field = EDITABLE_FIELDS.find((candidate) => rowErrors[entry.row.localKey]?.[candidate])
+        const field = EDITABLE_FIELDS.find(
+          (candidate) => rowErrors[entry.row.localKey]?.[candidate],
+        )
         return field ? { row: entry.row, field } : null
       })
       .find((error) => error !== null)

@@ -44,8 +44,7 @@ const {
   }),
   toRequest: (form) => ({ name: form.name.trim(), displayOrder: Number(form.displayOrder) }),
   isSameRequest: (form, request) =>
-    form.name.trim() === request.name &&
-    Object.is(Number(form.displayOrder), request.displayOrder),
+    form.name.trim() === request.name && Object.is(Number(form.displayOrder), request.displayOrder),
   compare: compareByDisplayOrder,
   nextDisplayOrder: (items) => nextDisplayOrderOf(items),
 })
@@ -62,13 +61,13 @@ const {
     <form class="form-grid form-grid-compact" @submit.prevent="submitCreate">
       <label class="field">
         <span>資産名</span>
-        <input v-model="createForm.name" type="text" autocomplete="off">
+        <input v-model="createForm.name" type="text" autocomplete="off" />
         <small v-if="createErrors.name" class="field-error">{{ createErrors.name }}</small>
       </label>
 
       <label class="field">
         <span>表示順</span>
-        <input v-model.number="createForm.displayOrder" type="number" min="0">
+        <input v-model.number="createForm.displayOrder" type="number" min="0" />
         <small v-if="createErrors.displayOrder" class="field-error">
           {{ createErrors.displayOrder }}
         </small>
@@ -116,7 +115,7 @@ const {
                   autocomplete="off"
                   @input="scheduleAutoSave(transferAccount)"
                   @blur="save(transferAccount)"
-                >
+                />
                 <small v-if="editErrors[transferAccount.id]?.name" class="field-error">
                   {{ editErrors[transferAccount.id]?.name }}
                 </small>
@@ -128,7 +127,7 @@ const {
                   min="0"
                   @input="scheduleAutoSave(transferAccount)"
                   @blur="save(transferAccount)"
-                >
+                />
                 <small v-if="editErrors[transferAccount.id]?.displayOrder" class="field-error">
                   {{ editErrors[transferAccount.id]?.displayOrder }}
                 </small>

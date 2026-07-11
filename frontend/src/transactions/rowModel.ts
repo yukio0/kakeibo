@@ -1,8 +1,4 @@
-import type {
-  Transaction,
-  TransactionMonthlySaveRequest,
-  TransactionType,
-} from '@/api/kakeibo'
+import type { Transaction, TransactionMonthlySaveRequest, TransactionType } from '@/api/kakeibo'
 
 /** 画面上の1行。`id` が null なら未保存、`localKey` は保存前後で変わらない行の同一性。 */
 export type TransactionRow = {
@@ -149,7 +145,10 @@ export function isTransactionField(field: string): field is TransactionField {
   )
 }
 
-export function toRequest(row: TransactionRow, displayOrder: number): TransactionMonthlySaveRequest {
+export function toRequest(
+  row: TransactionRow,
+  displayOrder: number,
+): TransactionMonthlySaveRequest {
   return {
     id: row.id,
     date: row.date || null,
