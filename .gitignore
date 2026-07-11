@@ -63,4 +63,7 @@ blob-report/
 .env.*
 !.env.example
 
+### Database backups ###
+backups/
+
 docs/
