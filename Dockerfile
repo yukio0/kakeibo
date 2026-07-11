@@ -29,9 +29,14 @@ RUN ./gradlew --no-daemon bootJar
 
 FROM eclipse-temurin:21-jre-jammy
 
+RUN groupadd --system --gid 10001 app \
+  && useradd --system --uid 10001 --gid app app
+
 WORKDIR /app
 
-COPY --from=backend-build /workspace/build/libs/*.jar app.jar
+COPY --from=backend-build --chown=app:app /workspace/build/libs/*.jar app.jar
+
+USER 10001
 
 ARG APP_PORT=8080
 
