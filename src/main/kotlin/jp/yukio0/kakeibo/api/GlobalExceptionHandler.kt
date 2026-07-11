@@ -3,6 +3,7 @@ package jp.yukio0.kakeibo.api
 import jakarta.validation.ConstraintViolationException
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
@@ -73,6 +74,12 @@ class GlobalExceptionHandler {
   fun handleUnauthorized(exception: UnauthorizedException): ResponseEntity<ApiErrorResponse> =
     ResponseEntity.status(HttpStatus.UNAUTHORIZED)
       .body(ApiErrorResponse(message = exception.message ?: "認証が必要です"))
+
+  @ExceptionHandler(TooManyRequestsException::class)
+  fun handleTooManyRequests(exception: TooManyRequestsException): ResponseEntity<ApiErrorResponse> =
+    ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+      .header(HttpHeaders.RETRY_AFTER, exception.retryAfterSeconds.toString())
+      .body(ApiErrorResponse(message = exception.message ?: "しばらくしてからお試しください"))
 
   @ExceptionHandler(Exception::class)
   fun handleUnexpectedException(exception: Exception): ResponseEntity<ApiErrorResponse> {

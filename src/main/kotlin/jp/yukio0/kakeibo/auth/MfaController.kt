@@ -34,6 +34,7 @@ class MfaController(
     org.springframework.security.web.context.SecurityContextRepository,
   private val trustedDeviceService: TrustedDeviceService,
   private val securityFeatureProperties: SecurityFeatureProperties,
+  private val authThrottleService: AuthThrottleService,
 ) {
 
   @GetMapping("/status")
@@ -123,12 +124,22 @@ class MfaController(
     val username =
       session.getAttribute(MfaSessionAttributes.PENDING_LOGIN_USERNAME) as? String
         ?: throw UnauthorizedException("2段階認証が必要です")
+    val throttleKey = AuthThrottleService.key(httpRequest, scope = "mfa", subject = username)
+    authThrottleService.checkAllowed(throttleKey)
+
     val appUser =
       appUserRepository.findByUsername(username) ?: throw UnauthorizedException("認証ユーザーが見つかりません")
     val secret = appUser.twoFactorSecret ?: throw UnauthorizedException("2段階認証が必要です")
     val code = request.code ?: ""
 
     if (!appUser.twoFactorEnabled || !totpService.isValidCode(secret, code)) {
+      authThrottleService.recordFailure(throttleKey)
+      // ロックに達したら、この pending セッションを無効化してパスワード段からやり直させる
+      runCatching { authThrottleService.checkAllowed(throttleKey) }
+        .onFailure { throttled ->
+          session.invalidate()
+          throw throttled
+        }
       throw ApiValidationException(
         message = "入力内容に誤りがあります",
         errors =
@@ -140,6 +151,7 @@ class MfaController(
           ),
       )
     }
+    authThrottleService.reset(throttleKey)
 
     if (!session.isNew) {
       httpRequest.changeSessionId()

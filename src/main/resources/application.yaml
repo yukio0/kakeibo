@@ -18,6 +18,9 @@ spring:
     open-in-view: false
 
 server:
+  # リバースプロキシの X-Forwarded-* を信頼してクライアントIPを復元する。
+  # レート制限のIPキーを正しくするために必要。プロキシ自身は信頼できる前提。
+  forward-headers-strategy: framework
   servlet:
     session:
       cookie:

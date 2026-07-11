@@ -10,3 +10,9 @@ class ApiValidationException(
 class ResourceNotFoundException(message: String) : RuntimeException(message)
 
 class UnauthorizedException(message: String) : RuntimeException(message)
+
+/** レート制限超過。[retryAfterSeconds] は Retry-After ヘッダに載せる待機秒数。 */
+class TooManyRequestsException(
+  message: String,
+  val retryAfterSeconds: Long,
+) : RuntimeException(message)

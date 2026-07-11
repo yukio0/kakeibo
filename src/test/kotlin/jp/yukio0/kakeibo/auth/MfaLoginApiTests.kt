@@ -214,6 +214,54 @@ class MfaLoginApiTests {
   }
 
   @Test
+  fun verifyMfaLocksOutAfterRepeatedInvalidCodesAndInvalidatesPendingSession() {
+    val secret = totpService.generateSecret()
+    val username = createTestUser(twoFactorEnabled = true, twoFactorSecret = secret)
+    val session = login(username, expectMfaRequired = true)
+    val invalidCode = if (totpService.generateCode(secret) == "000000") "000001" else "000000"
+
+    // MAX_FAILURES-1 回までは通常のコード誤りエラー
+    repeat(AuthThrottleService.MAX_FAILURES - 1) {
+      mockMvc
+        .perform(
+          post("/api/mfa/verify")
+            .session(session)
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(codeJson(invalidCode))
+        )
+        .andExpect(status().isBadRequest)
+        .andExpect(jsonPath("$.errors[0].field").value("code"))
+    }
+
+    // 上限到達の試行は 429 になり、Retry-After が付く
+    mockMvc
+      .perform(
+        post("/api/mfa/verify")
+          .session(session)
+          .with(csrf())
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(codeJson(invalidCode))
+      )
+      .andExpect(status().isTooManyRequests)
+      .andExpect(
+        org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+          .exists("Retry-After")
+      )
+
+    // pendingセッションは無効化され、正しいコードでも認証できない(パスワード段からやり直し)
+    mockMvc
+      .perform(
+        post("/api/mfa/verify")
+          .session(session)
+          .with(csrf())
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(codeJson(totpService.generateCode(secret)))
+      )
+      .andExpect(status().isUnauthorized)
+  }
+
+  @Test
   fun verifyMfaRejectsMissingPendingLogin() {
     mockMvc
       .perform(

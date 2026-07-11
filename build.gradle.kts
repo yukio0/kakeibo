@@ -28,6 +28,7 @@ repositories {
 
 dependencies {
   e2eRuntimeOnly("com.h2database:h2")
+  implementation("com.github.ben-manes.caffeine:caffeine:3.2.0")
   implementation("com.google.zxing:core:3.5.3")
   implementation("org.springframework.boot:spring-boot-starter-data-jpa")
   implementation("org.springframework.boot:spring-boot-starter-security")

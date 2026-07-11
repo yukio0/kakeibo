@@ -79,6 +79,37 @@ class AuthApiTests {
   }
 
   @Test
+  fun loginLocksOutAfterRepeatedFailures() {
+    val username = "throttle-${UUID.randomUUID()}"
+
+    // MAX_FAILURES 回の失敗は通常の 401
+    repeat(AuthThrottleService.MAX_FAILURES) {
+      mockMvc
+        .perform(
+          post("/api/login")
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(loginJson(username = username, password = "wrong-password"))
+        )
+        .andExpect(status().isUnauthorized)
+    }
+
+    // 以降はロックされ 429 + Retry-After
+    mockMvc
+      .perform(
+        post("/api/login")
+          .with(csrf())
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(loginJson(username = username, password = "wrong-password"))
+      )
+      .andExpect(status().isTooManyRequests)
+      .andExpect(
+        org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+          .exists("Retry-After")
+      )
+  }
+
+  @Test
   fun logoutInvalidatesSession() {
     val session = login()
 

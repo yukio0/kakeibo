@@ -37,6 +37,7 @@ class AuthController(
   private val securityContextRepository: SecurityContextRepository,
   private val trustedDeviceService: TrustedDeviceService,
   private val securityFeatureProperties: SecurityFeatureProperties,
+  private val authThrottleService: AuthThrottleService,
 ) {
 
   @PostMapping("/login")
@@ -52,17 +53,20 @@ class AuthController(
       )
     }
 
+    val username = request.username.orEmpty().trim()
+    val throttleKey = AuthThrottleService.key(httpRequest, scope = "login", subject = username)
+    authThrottleService.checkAllowed(throttleKey)
+
     val authentication =
       try {
         authenticationManager.authenticate(
-          UsernamePasswordAuthenticationToken(
-            request.username?.trim(),
-            request.password,
-          )
+          UsernamePasswordAuthenticationToken(username, request.password)
         )
       } catch (exception: AuthenticationException) {
+        authThrottleService.recordFailure(throttleKey)
         throw UnauthorizedException("ユーザー名またはパスワードが正しくありません")
       }
+    authThrottleService.reset(throttleKey)
 
     val appUser = authentication.toAppUser()
     val session = httpRequest.getSession(true)
