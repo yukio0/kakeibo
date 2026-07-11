@@ -18,6 +18,7 @@ import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository
 import org.springframework.security.web.context.SecurityContextRepository
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository
+import org.springframework.security.web.header.writers.StaticHeadersWriter
 
 @Configuration
 @EnableWebSecurity
@@ -45,6 +46,9 @@ class SecurityConfig(
     http
       .csrf { csrf ->
         csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+      }
+      .headers { headers ->
+        headers.addHeaderWriter(StaticHeadersWriter("X-Robots-Tag", "noindex, nofollow"))
       }
       .securityContext { securityContext ->
         securityContext.securityContextRepository(securityContextRepository)

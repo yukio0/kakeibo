@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.test.web.servlet.setup.DefaultMockMvcBuilder
@@ -50,6 +51,20 @@ class AuthApiTests {
       .andExpect(jsonPath("$.headerName").isNotEmpty)
       .andExpect(jsonPath("$.parameterName").isNotEmpty)
       .andExpect(jsonPath("$.token").isNotEmpty)
+  }
+
+  @Test
+  fun responsesCarryNoindexRobotsHeader() {
+    // 認証前の公開エンドポイントにも、保護済みAPIにも noindex が付くことを確認する
+    mockMvc
+      .perform(get("/api/csrf"))
+      .andExpect(status().isOk)
+      .andExpect(header().string("X-Robots-Tag", "noindex, nofollow"))
+
+    mockMvc
+      .perform(get("/api/me").session(login()))
+      .andExpect(status().isOk)
+      .andExpect(header().string("X-Robots-Tag", "noindex, nofollow"))
   }
 
   @Test
