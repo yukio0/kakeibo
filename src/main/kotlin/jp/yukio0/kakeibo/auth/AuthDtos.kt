@@ -1,6 +1,7 @@
 package jp.yukio0.kakeibo.auth
 
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.Size
 
 data class LoginRequest(
   @field:NotBlank(message = "ユーザー名を入力してください") val username: String?,
@@ -9,7 +10,9 @@ data class LoginRequest(
 
 data class ChangePasswordRequest(
   @field:NotBlank(message = "現在のパスワードを入力してください") val currentPassword: String?,
-  @field:NotBlank(message = "新しいパスワードを入力してください") val newPassword: String?,
+  @field:NotBlank(message = "新しいパスワードを入力してください")
+  @field:Size(min = 12, max = 200, message = "新しいパスワードは12文字以上200文字以内で入力してください")
+  val newPassword: String?,
   @field:NotBlank(message = "確認用パスワードを入力してください") val newPasswordConfirm: String?,
 )
 

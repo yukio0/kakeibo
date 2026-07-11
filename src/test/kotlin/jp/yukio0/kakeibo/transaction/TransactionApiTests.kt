@@ -188,6 +188,40 @@ class TransactionApiTests {
   }
 
   @Test
+  fun exportNeutralizesFormulaLikeCellsAgainstCsvInjection() {
+    val category =
+      categoryRepository.saveAndFlush(
+        CategoryEntity(
+          name = "=HYPERLINK(\"http://evil\")",
+          type = TransactionType.EXPENSE,
+          displayOrder = 941,
+        )
+      )
+    saveTransaction(
+      category = category,
+      transactionDate = LocalDate.of(2026, 7, 15),
+      amount = 500,
+      memo = "@SUM(A1)",
+      displayOrder = 1,
+    )
+
+    val csv =
+      mockMvc
+        .perform(get("/api/transactions/export").param("year", "2026").param("month", "7"))
+        .andExpect(status().isOk)
+        .andReturn()
+        .response
+        .contentAsByteArray
+
+    // 先頭が =, @ のセルはアポストロフィで無効化され、" は "" のままエスケープされる
+    assertEquals(
+      "\"日付\",\"種別\",\"カテゴリ・振替元\",\"支払い方法・振替先\",\"金額\",\"メモ\"\r\n" +
+        "\"2026-07-15\",\"支出\",\"'=HYPERLINK(\"\"http://evil\"\")\",\"現金\",\"500\",\"'@SUM(A1)\"\r\n",
+      String(csv, Charsets.UTF_8),
+    )
+  }
+
+  @Test
   fun invalidYearMonthReturnsBadRequest() {
     mockMvc
       .perform(get("/api/transactions").param("year", "2026").param("month", "13"))

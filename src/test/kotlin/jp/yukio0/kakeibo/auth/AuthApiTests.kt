@@ -217,6 +217,32 @@ class AuthApiTests {
   }
 
   @Test
+  fun changePasswordRejectsTooShortNewPassword() {
+    val username = createTestUser(password = "old-password")
+    val session = login(username = username, password = "old-password")
+
+    mockMvc
+      .perform(
+        put("/api/me/password")
+          .session(session)
+          .with(csrf())
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(
+            changePasswordJson(
+              currentPassword = "old-password",
+              newPassword = "short",
+              newPasswordConfirm = "short",
+            )
+          )
+      )
+      .andExpect(status().isBadRequest)
+      .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+      .andExpect(jsonPath("$.message").value("入力内容に誤りがあります"))
+      .andExpect(jsonPath("$.errors[0].field").value("newPassword"))
+      .andExpect(jsonPath("$.errors[0].message").value("新しいパスワードは12文字以上200文字以内で入力してください"))
+  }
+
+  @Test
   fun changePasswordRejectsMissingCsrfToken() {
     val username = createTestUser(password = "old-password")
     val session = login(username = username, password = "old-password")

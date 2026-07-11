@@ -388,8 +388,22 @@ class TransactionService(
     }
 
   private fun appendCsvRow(target: StringBuilder, values: List<String>) {
-    target.append(values.joinToString(",") { value -> "\"" + value.replace("\"", "\"\"") + "\"" })
+    target.append(values.joinToString(",") { value -> "\"" + escapeCsvValue(value) + "\"" })
     target.append("\r\n")
+  }
+
+  /**
+   * CSVインジェクション対策。=, +, -, @, タブ, CR で始まる値は表計算ソフトが数式として評価するため、 アポストロフィを前置して無効化する。あわせて " を ""
+   * にエスケープする。
+   */
+  private fun escapeCsvValue(value: String): String {
+    val neutralized =
+      if (value.isNotEmpty() && value.first() in FORMULA_TRIGGER_CHARS) {
+        "'$value"
+      } else {
+        value
+      }
+    return neutralized.replace("\"", "\"\"")
   }
 
   private data class TransactionMonthlySaveCommand(
@@ -405,4 +419,8 @@ class TransactionService(
   )
 
   private fun rowField(index: Int, field: String): String = "[$index].$field"
+
+  private companion object {
+    val FORMULA_TRIGGER_CHARS = setOf('=', '+', '-', '@', '\t', '\r')
+  }
 }
