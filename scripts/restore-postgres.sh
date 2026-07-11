@@ -2,8 +2,10 @@
 
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+readonly PROJECT_ROOT
 readonly BACKUP_SCRIPT="$SCRIPT_DIR/backup-postgres.sh"
 
 backend_stopped=false
@@ -97,6 +99,8 @@ fi
 trap restart_backend_after_failure EXIT
 
 echo "データベースを復元します。"
+# $POSTGRES_USER/$POSTGRES_DB は postgres コンテナ内の sh で展開させるため、単一引用符のまま渡す(SC2016は意図的)。
+# shellcheck disable=SC2016
 compose exec -T postgres sh -c 'exec pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --no-privileges --exit-on-error' <"$dump_file"
 
 restart_backend

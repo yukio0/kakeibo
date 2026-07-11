@@ -2,8 +2,10 @@
 
 set -Eeuo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+readonly PROJECT_ROOT
 readonly DEFAULT_BACKUP_DIR="$PROJECT_ROOT/backups"
 
 backup_dir="${BACKUP_DIR:-$DEFAULT_BACKUP_DIR}"
@@ -41,7 +43,10 @@ umask 077
 mkdir -p -- "$backup_dir"
 trap cleanup_temporary_file ERR INT TERM
 
+# $POSTGRES_USER/$POSTGRES_DB は postgres コンテナ内の sh で展開させるため、単一引用符のまま渡す(SC2016は意図的)。
+# shellcheck disable=SC2016
 compose exec -T postgres sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null'
+# shellcheck disable=SC2016
 compose exec -T postgres sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom' >"$temporary_file"
 compose exec -T postgres pg_restore --list <"$temporary_file" >/dev/null
 
