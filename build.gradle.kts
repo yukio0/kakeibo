@@ -78,6 +78,49 @@ tasks.register<Exec>("e2eTest") {
   commandLine(npmExecutable, "run", "test")
 }
 
+// shellcheck / shfmt は公式Dockerイメージで実行する。
+// タグでバージョンを固定して再現性を確保する。実行には Docker が起動している必要がある。
+val shellcheckImage = "koalaman/shellcheck:v0.10.0"
+val shfmtImage = "mvdan/shfmt:v3.10.0"
+// インデント2スペース(既存スクリプト・プロジェクトに合わせる) / case を字下げ / 二項演算子を行頭に置く
+val shfmtArgs = arrayOf("-i", "2", "-ci", "-bn")
+val shellScriptsDir = "scripts"
+val shellScriptFiles =
+  fileTree(shellScriptsDir) { include("**/*.sh") }
+    .files
+    .map { it.relativeTo(projectDir).invariantSeparatorsPath }
+    .sorted()
+
+// カレントを /work にマウントして、リポジトリ相対パスのまま渡す。
+fun dockerRun(vararg command: String): List<String> =
+  listOf("docker", "run", "--rm", "-v", "$projectDir:/work", "-w", "/work") + command
+
+tasks.register<Exec>("shellcheck") {
+  group = "verification"
+  description = "shellcheck でシェルスクリプトを静的解析します。"
+  commandLine(dockerRun(shellcheckImage, *shellScriptFiles.toTypedArray()))
+  inputs.files(shellScriptFiles.map { file(it) })
+  outputs.upToDateWhen { true }
+}
+
+tasks.register<Exec>("shfmtCheck") {
+  group = "verification"
+  description = "shfmt でシェルスクリプトの整形崩れを検出します(差分があれば失敗)。"
+  commandLine(dockerRun(shfmtImage, "-d", *shfmtArgs, shellScriptsDir))
+  inputs.files(shellScriptFiles.map { file(it) })
+  outputs.upToDateWhen { true }
+}
+
+tasks.register<Exec>("shfmtApply") {
+  group = "verification"
+  description = "shfmt でシェルスクリプトを整形します。"
+  commandLine(dockerRun(shfmtImage, "-w", *shfmtArgs, shellScriptsDir))
+}
+
+tasks.named("check") {
+  dependsOn("shellcheck", "shfmtCheck")
+}
+
 kotlin {
   compilerOptions {
     freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
