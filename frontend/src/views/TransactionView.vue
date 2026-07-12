@@ -97,7 +97,7 @@ const categoryHeaderLabel = computed(() =>
 const paymentMethodHeaderLabel = computed(() =>
   activeType.value === 'TRANSFER' ? '振替先' : '支払い方法',
 )
-const sortedRows = computed(() => [...rows.value].sort(compareRows))
+const sortedRows = ref<TransactionRow[]>([])
 const mobileEntries = computed(() =>
   [...rows.value].sort((left, right) => {
     if (left.date !== right.date) {
@@ -165,6 +165,7 @@ async function loadMonth(): Promise<void> {
     paymentMethods.value = [...paymentMethodItems].sort(compareByDisplayOrder)
     transferAccounts.value = [...transferAccountItems].sort(compareByDisplayOrder)
     rows.value = transactionItems.map(toRow)
+    applySort()
     captureSavedRowSnapshots()
     persistedSummary.value = monthlySummary
     resetNewRow()
@@ -187,6 +188,7 @@ async function registerNewRow(): Promise<void> {
     const saved = await createTransaction(period.year, period.month, toSaveRequest(newRow))
     const created = toRow(saved)
     rows.value = [...rows.value, created]
+    applySort()
     captureSavedRow(created)
     await refreshPersistedSummary()
     resetNewRow()
@@ -214,6 +216,7 @@ async function updateRow(row: TransactionRow): Promise<void> {
     )
     applyTransaction(row, saved)
     captureSavedRow(row)
+    applySort()
     await refreshPersistedSummary()
   } catch (error) {
     applySaveError(error, row)
@@ -232,6 +235,7 @@ async function deleteRow(row: TransactionRow): Promise<void> {
   try {
     await deleteTransaction(row.id, period.year, period.month)
     rows.value = rows.value.filter((current) => current.localKey !== row.localKey)
+    applySort()
     delete savedRowSnapshots.value[row.localKey]
     clearRowError(row)
     await refreshPersistedSummary()
@@ -451,6 +455,11 @@ function toggleSort(field: SortField): void {
     sort.field = field
     sort.direction = 'asc'
   }
+  applySort()
+}
+
+function applySort(): void {
+  sortedRows.value = [...rows.value].sort(compareRows)
 }
 
 function sortIcon(field: SortField): string {
