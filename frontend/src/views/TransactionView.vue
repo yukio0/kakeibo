@@ -33,6 +33,7 @@ import {
   type TransactionRow,
 } from '@/transactions/rowModel'
 import { validateEntries, type ValidationContext } from '@/transactions/validation'
+import TransactionFields from '@/transactions/TransactionFields.vue'
 
 type SortField = 'date' | 'type' | 'category' | 'paymentMethod' | 'amount'
 type SortDirection = 'asc' | 'desc'
@@ -409,18 +410,6 @@ function paymentMethodOptions(row: TransactionRow): PaymentMethod[] | TransferAc
   return row.type === 'TRANSFER' ? transferAccounts.value : paymentMethods.value
 }
 
-function isFieldDisabled(row: TransactionRow, field: TransactionField): boolean {
-  return (
-    loading.value ||
-    saving.value ||
-    (field === 'memo' && row.id === null && !isAmountLikelyValid(row))
-  )
-}
-
-function isAmountLikelyValid(row: TransactionRow): boolean {
-  return typeof row.amount === 'number' && Number.isInteger(row.amount) && row.amount >= 1
-}
-
 function defaultCategoryId(type: TransactionType): number | '' {
   return type === 'TRANSFER' ? defaultTransferAccountId() : (categoriesForType(type)[0]?.id ?? '')
 }
@@ -538,17 +527,22 @@ function applySaveError(error: unknown, row: TransactionRow): void {
   saveError.value = toMessage(error)
 }
 
-function applyApiErrors(error: ApiError, row: TransactionRow): void {
+function apiFieldErrors(error: ApiError): TransactionFieldErrors {
+  const result: TransactionFieldErrors = {}
   error.errors.forEach((fieldError) => {
     const field = fieldError.field.replace(/^\[\d+\]\./, '')
-    if (!isTransactionField(field)) {
-      return
-    }
-    rowErrors[row.localKey] = {
-      ...rowErrors[row.localKey],
-      [field]: fieldError.message,
+    if (isTransactionField(field)) {
+      result[field] = fieldError.message
     }
   })
+  return result
+}
+
+function applyApiErrors(error: ApiError, row: TransactionRow): void {
+  rowErrors[row.localKey] = {
+    ...rowErrors[row.localKey],
+    ...apiFieldErrors(error),
+  }
 }
 
 function clearRowErrors(): void {
@@ -697,12 +691,7 @@ async function submitSheet(): Promise<void> {
     closeSheet()
   } catch (error) {
     if (error instanceof ApiError) {
-      error.errors.forEach((fieldError) => {
-        const field = fieldError.field.replace(/^\[\d+\]\./, '')
-        if (isTransactionField(field)) {
-          draftErrors[field] = fieldError.message
-        }
-      })
+      Object.assign(draftErrors, apiFieldErrors(error))
     }
     saveError.value = toMessage(error)
   } finally {
@@ -872,108 +861,21 @@ async function deleteFromSheet(): Promise<void> {
         </thead>
         <tbody>
           <tr class="new-transaction-row">
-            <td>
-              <input
-                v-model="newRow.date"
-                type="date"
-                required
-                data-new-row-field="date"
-                :class="{ 'cell-error': !!rowErrors[newRow.localKey]?.date }"
-                :min="monthStartDate"
-                :max="monthEndDate"
-                :disabled="isFieldDisabled(newRow, 'date')"
-                @focus="activeType = newRow.type"
-                @input="handleFieldInput(newRow, 'date')"
-              />
-              <small v-if="rowErrors[newRow.localKey]?.date" class="field-error">{{
-                rowErrors[newRow.localKey]?.date
-              }}</small>
-            </td>
-            <td>
-              <select
-                v-model="newRow.type"
-                :class="{ 'cell-error': !!rowErrors[newRow.localKey]?.type }"
-                :disabled="isFieldDisabled(newRow, 'type')"
-                @change="handleTypeChange(newRow)"
-              >
-                <option value="EXPENSE">支出</option>
-                <option value="INCOME">収入</option>
-                <option value="TRANSFER">振替</option>
-              </select>
-              <small v-if="rowErrors[newRow.localKey]?.type" class="field-error">{{
-                rowErrors[newRow.localKey]?.type
-              }}</small>
-            </td>
-            <td>
-              <select
-                v-model="newRow.categoryId"
-                :class="{ 'cell-error': !!rowErrors[newRow.localKey]?.categoryId }"
-                :disabled="isFieldDisabled(newRow, 'categoryId')"
-                @focus="activeType = newRow.type"
-                @change="handleFieldInput(newRow, 'categoryId')"
-              >
-                <option
-                  v-for="option in categoryOptions(newRow)"
-                  :key="option.id"
-                  :value="option.id"
-                >
-                  {{ option.name }}
-                </option>
-              </select>
-              <small v-if="rowErrors[newRow.localKey]?.categoryId" class="field-error">{{
-                rowErrors[newRow.localKey]?.categoryId
-              }}</small>
-            </td>
-            <td>
-              <select
-                v-model="newRow.paymentMethodId"
-                :class="{ 'cell-error': !!rowErrors[newRow.localKey]?.paymentMethodId }"
-                :disabled="isFieldDisabled(newRow, 'paymentMethodId')"
-                @focus="activeType = newRow.type"
-                @change="handleFieldInput(newRow, 'paymentMethodId')"
-              >
-                <option
-                  v-for="option in paymentMethodOptions(newRow)"
-                  :key="option.id"
-                  :value="option.id"
-                >
-                  {{ option.name }}
-                </option>
-              </select>
-              <small v-if="rowErrors[newRow.localKey]?.paymentMethodId" class="field-error">{{
-                rowErrors[newRow.localKey]?.paymentMethodId
-              }}</small>
-            </td>
-            <td>
-              <input
-                v-model.number="newRow.amount"
-                type="number"
-                min="1"
-                inputmode="numeric"
-                :class="{ 'cell-error': !!rowErrors[newRow.localKey]?.amount }"
-                :disabled="isFieldDisabled(newRow, 'amount')"
-                @focus="activeType = newRow.type"
-                @input="handleFieldInput(newRow, 'amount')"
-              />
-              <small v-if="rowErrors[newRow.localKey]?.amount" class="field-error">{{
-                rowErrors[newRow.localKey]?.amount
-              }}</small>
-            </td>
-            <td>
-              <textarea
-                v-model="newRow.memo"
-                class="memo-textarea"
-                maxlength="500"
-                wrap="soft"
-                :class="{ 'cell-error': !!rowErrors[newRow.localKey]?.memo }"
-                :disabled="isFieldDisabled(newRow, 'memo')"
-                @focus="activeType = newRow.type"
-                @input="handleFieldInput(newRow, 'memo')"
-              />
-              <small v-if="rowErrors[newRow.localKey]?.memo" class="field-error">{{
-                rowErrors[newRow.localKey]?.memo
-              }}</small>
-            </td>
+            <TransactionFields
+              v-model="newRow"
+              variant="row"
+              mark-new-row
+              :errors="rowErrors[newRow.localKey]"
+              :category-options="categoryOptions(newRow)"
+              :payment-method-options="paymentMethodOptions(newRow)"
+              :month-start-date="monthStartDate"
+              :month-end-date="monthEndDate"
+              :loading="loading"
+              :saving="saving"
+              @type-change="handleTypeChange(newRow)"
+              @field-input="(field) => handleFieldInput(newRow, field)"
+              @field-focus="activeType = newRow.type"
+            />
             <td class="table-actions-cell">
               <button type="button" :disabled="loading || saving" @click="registerNewRow">
                 {{ saving ? '登録中...' : '登録' }}
@@ -988,103 +890,20 @@ async function deleteFromSheet(): Promise<void> {
             :key="row.localKey"
             :class="{ 'unsaved-row': isRowDirty(row) }"
           >
-            <td>
-              <input
-                v-model="row.date"
-                type="date"
-                required
-                :class="{ 'cell-error': !!rowErrors[row.localKey]?.date }"
-                :min="monthStartDate"
-                :max="monthEndDate"
-                :disabled="isFieldDisabled(row, 'date')"
-                @focus="activeType = row.type"
-                @input="handleFieldInput(row, 'date')"
-              />
-              <small v-if="rowErrors[row.localKey]?.date" class="field-error">{{
-                rowErrors[row.localKey]?.date
-              }}</small>
-            </td>
-            <td>
-              <select
-                v-model="row.type"
-                :class="{ 'cell-error': !!rowErrors[row.localKey]?.type }"
-                :disabled="isFieldDisabled(row, 'type')"
-                @change="handleTypeChange(row)"
-              >
-                <option value="EXPENSE">支出</option>
-                <option value="INCOME">収入</option>
-                <option value="TRANSFER">振替</option>
-              </select>
-              <small v-if="rowErrors[row.localKey]?.type" class="field-error">{{
-                rowErrors[row.localKey]?.type
-              }}</small>
-            </td>
-            <td>
-              <select
-                v-model="row.categoryId"
-                :class="{ 'cell-error': !!rowErrors[row.localKey]?.categoryId }"
-                :disabled="isFieldDisabled(row, 'categoryId')"
-                @focus="activeType = row.type"
-                @change="handleFieldInput(row, 'categoryId')"
-              >
-                <option v-for="option in categoryOptions(row)" :key="option.id" :value="option.id">
-                  {{ option.name }}
-                </option>
-              </select>
-              <small v-if="rowErrors[row.localKey]?.categoryId" class="field-error">{{
-                rowErrors[row.localKey]?.categoryId
-              }}</small>
-            </td>
-            <td>
-              <select
-                v-model="row.paymentMethodId"
-                :class="{ 'cell-error': !!rowErrors[row.localKey]?.paymentMethodId }"
-                :disabled="isFieldDisabled(row, 'paymentMethodId')"
-                @focus="activeType = row.type"
-                @change="handleFieldInput(row, 'paymentMethodId')"
-              >
-                <option
-                  v-for="option in paymentMethodOptions(row)"
-                  :key="option.id"
-                  :value="option.id"
-                >
-                  {{ option.name }}
-                </option>
-              </select>
-              <small v-if="rowErrors[row.localKey]?.paymentMethodId" class="field-error">{{
-                rowErrors[row.localKey]?.paymentMethodId
-              }}</small>
-            </td>
-            <td>
-              <input
-                v-model.number="row.amount"
-                type="number"
-                min="1"
-                inputmode="numeric"
-                :class="{ 'cell-error': !!rowErrors[row.localKey]?.amount }"
-                :disabled="isFieldDisabled(row, 'amount')"
-                @focus="activeType = row.type"
-                @input="handleFieldInput(row, 'amount')"
-              />
-              <small v-if="rowErrors[row.localKey]?.amount" class="field-error">{{
-                rowErrors[row.localKey]?.amount
-              }}</small>
-            </td>
-            <td>
-              <textarea
-                v-model="row.memo"
-                class="memo-textarea"
-                maxlength="500"
-                wrap="soft"
-                :class="{ 'cell-error': !!rowErrors[row.localKey]?.memo }"
-                :disabled="isFieldDisabled(row, 'memo')"
-                @focus="activeType = row.type"
-                @input="handleFieldInput(row, 'memo')"
-              />
-              <small v-if="rowErrors[row.localKey]?.memo" class="field-error">{{
-                rowErrors[row.localKey]?.memo
-              }}</small>
-            </td>
+            <TransactionFields
+              :model-value="row"
+              variant="row"
+              :errors="rowErrors[row.localKey]"
+              :category-options="categoryOptions(row)"
+              :payment-method-options="paymentMethodOptions(row)"
+              :month-start-date="monthStartDate"
+              :month-end-date="monthEndDate"
+              :loading="loading"
+              :saving="saving"
+              @type-change="handleTypeChange(row)"
+              @field-input="(field) => handleFieldInput(row, field)"
+              @field-focus="activeType = row.type"
+            />
             <td class="table-actions-cell">
               <small v-if="rowErrors[row.localKey]?.id" class="field-error">{{
                 rowErrors[row.localKey]?.id
@@ -1163,86 +982,17 @@ async function deleteFromSheet(): Promise<void> {
         <button type="button" class="sheet-close" aria-label="閉じる" @click="closeSheet">×</button>
       </div>
       <div class="sheet-body">
-        <label class="card-field"
-          ><span>日付</span
-          ><input
-            v-model="draft.date"
-            type="date"
-            required
-            :min="monthStartDate"
-            :max="monthEndDate"
-            :class="{ 'cell-error': !!draftErrors.date }"
-            @input="clearDraftError('date')"
-          /><small v-if="draftErrors.date" class="field-error">{{ draftErrors.date }}</small></label
-        >
-        <label class="card-field"
-          ><span>種別</span
-          ><select
-            v-model="draft.type"
-            :class="{ 'cell-error': !!draftErrors.type }"
-            @change="changeDraftType"
-          >
-            <option value="EXPENSE">支出</option>
-            <option value="INCOME">収入</option>
-            <option value="TRANSFER">振替</option></select
-          ><small v-if="draftErrors.type" class="field-error">{{ draftErrors.type }}</small></label
-        >
-        <label class="card-field"
-          ><span>{{ draft.type === 'TRANSFER' ? '振替元' : 'カテゴリ' }}</span
-          ><select
-            v-model="draft.categoryId"
-            :class="{ 'cell-error': !!draftErrors.categoryId }"
-            @change="clearDraftError('categoryId')"
-          >
-            <option v-for="option in categoryOptions(draft)" :key="option.id" :value="option.id">
-              {{ option.name }}
-            </option></select
-          ><small v-if="draftErrors.categoryId" class="field-error">{{
-            draftErrors.categoryId
-          }}</small></label
-        >
-        <label class="card-field"
-          ><span>{{ draft.type === 'TRANSFER' ? '振替先' : '支払い方法' }}</span
-          ><select
-            v-model="draft.paymentMethodId"
-            :class="{ 'cell-error': !!draftErrors.paymentMethodId }"
-            @change="clearDraftError('paymentMethodId')"
-          >
-            <option
-              v-for="option in paymentMethodOptions(draft)"
-              :key="option.id"
-              :value="option.id"
-            >
-              {{ option.name }}
-            </option></select
-          ><small v-if="draftErrors.paymentMethodId" class="field-error">{{
-            draftErrors.paymentMethodId
-          }}</small></label
-        >
-        <label class="card-field"
-          ><span>金額</span
-          ><input
-            v-model.number="draft.amount"
-            type="number"
-            min="1"
-            inputmode="numeric"
-            :class="{ 'cell-error': !!draftErrors.amount }"
-            @input="clearDraftError('amount')"
-          /><small v-if="draftErrors.amount" class="field-error">{{
-            draftErrors.amount
-          }}</small></label
-        >
-        <label class="card-field"
-          ><span>メモ</span
-          ><textarea
-            v-model="draft.memo"
-            class="memo-textarea"
-            maxlength="500"
-            wrap="soft"
-            :class="{ 'cell-error': !!draftErrors.memo }"
-            @input="clearDraftError('memo')"
-          /><small v-if="draftErrors.memo" class="field-error">{{ draftErrors.memo }}</small></label
-        >
+        <TransactionFields
+          v-model="draft"
+          variant="card"
+          :errors="draftErrors"
+          :category-options="categoryOptions(draft)"
+          :payment-method-options="paymentMethodOptions(draft)"
+          :month-start-date="monthStartDate"
+          :month-end-date="monthEndDate"
+          @type-change="changeDraftType"
+          @field-input="clearDraftError"
+        />
       </div>
       <div class="sheet-actions">
         <button
