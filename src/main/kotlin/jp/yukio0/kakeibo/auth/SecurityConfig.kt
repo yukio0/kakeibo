@@ -79,7 +79,16 @@ class SecurityConfig(
             "/transfers",
             "/trusted-devices",
             "/assets/**",
+            // PWA/アイコン類は未ログイン(ログイン画面表示時やインストール時)にも取得できる必要がある
+            "/site.webmanifest",
+            "/icon-192.png",
+            "/icon-512.png",
+            "/apple-touch-icon.png",
             "/favicon.ico",
+            "/favicon.svg",
+            "/favicon-16x16.png",
+            "/favicon-32x32.png",
+            "/favicon-48x48.png",
             "/vite.svg",
           )
           .permitAll()

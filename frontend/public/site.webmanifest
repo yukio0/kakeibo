@@ -1,6 +1,14 @@
 {
+  "id": "/",
   "name": "家計簿",
   "short_name": "家計簿",
+  "lang": "ja",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#2563eb",
+  "background_color": "#ffffff",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -12,8 +20,5 @@
       "sizes": "512x512",
       "type": "image/png"
     }
-  ],
-  "theme_color": "#2563eb",
-  "background_color": "#ffffff",
-  "display": "standalone"
+  ]
 }

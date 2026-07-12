@@ -801,5 +801,141 @@ function defaultNewRowDate(): string {
         </tbody>
       </table>
     </div>
+
+    <!-- 狭幅(スマホ)用: 横スクロールするテーブルの代わりに1件=1カードで縦積み表示する。
+         同じ rows / ハンドラにバインドしており、テーブルとはCSSで排他表示を切り替える。 -->
+    <div class="transaction-cards">
+      <p v-if="rows.length === 0" class="empty-cell">この月の家計簿データはまだありません。</p>
+      <article
+        v-for="row in rows"
+        :key="`card-${row.localKey}`"
+        class="transaction-card"
+        :class="{ 'deleted-row': row.deleted }"
+      >
+        <label class="card-field">
+          <span>日付</span>
+          <input
+            v-model="row.date"
+            type="date"
+            required
+            :class="{ 'cell-error': !!rowErrors[row.localKey]?.date }"
+            :min="monthStartDate"
+            :max="monthEndDate"
+            :disabled="isFieldDisabled(row, 'date')"
+            @input="handleCellInput(row, 'date')"
+          />
+          <small v-if="rowErrors[row.localKey]?.date" class="field-error">
+            {{ rowErrors[row.localKey]?.date }}
+          </small>
+        </label>
+
+        <label class="card-field">
+          <span>種別</span>
+          <select
+            v-model="row.type"
+            :class="{ 'cell-error': !!rowErrors[row.localKey]?.type }"
+            :disabled="isFieldDisabled(row, 'type')"
+            @change="handleTypeChange(row)"
+          >
+            <option value="EXPENSE">支出</option>
+            <option value="INCOME">収入</option>
+            <option value="TRANSFER">振替</option>
+          </select>
+          <small v-if="rowErrors[row.localKey]?.type" class="field-error">
+            {{ rowErrors[row.localKey]?.type }}
+          </small>
+        </label>
+
+        <label class="card-field">
+          <span>{{ row.type === 'TRANSFER' ? '振替元' : 'カテゴリ' }}</span>
+          <select
+            v-model="row.categoryId"
+            :class="{ 'cell-error': !!rowErrors[row.localKey]?.categoryId }"
+            :disabled="isFieldDisabled(row, 'categoryId')"
+            @change="handleCellInput(row, 'categoryId')"
+          >
+            <option v-for="option in categoryOptions(row)" :key="option.id" :value="option.id">
+              {{ option.name }}
+            </option>
+          </select>
+          <small v-if="rowErrors[row.localKey]?.categoryId" class="field-error">
+            {{ rowErrors[row.localKey]?.categoryId }}
+          </small>
+        </label>
+
+        <label class="card-field">
+          <span>{{ row.type === 'TRANSFER' ? '振替先' : '支払い方法' }}</span>
+          <select
+            v-model="row.paymentMethodId"
+            :class="{ 'cell-error': !!rowErrors[row.localKey]?.paymentMethodId }"
+            :disabled="isFieldDisabled(row, 'paymentMethodId')"
+            @change="handleCellInput(row, 'paymentMethodId')"
+          >
+            <option v-for="option in paymentMethodOptions(row)" :key="option.id" :value="option.id">
+              {{ option.name }}
+            </option>
+          </select>
+          <small v-if="rowErrors[row.localKey]?.paymentMethodId" class="field-error">
+            {{ rowErrors[row.localKey]?.paymentMethodId }}
+          </small>
+        </label>
+
+        <label class="card-field">
+          <span>金額</span>
+          <input
+            v-model.number="row.amount"
+            type="number"
+            min="1"
+            inputmode="numeric"
+            :class="{ 'cell-error': !!rowErrors[row.localKey]?.amount }"
+            :disabled="isFieldDisabled(row, 'amount')"
+            @input="handleCellInput(row, 'amount')"
+          />
+          <small v-if="rowErrors[row.localKey]?.amount" class="field-error">
+            {{ rowErrors[row.localKey]?.amount }}
+          </small>
+        </label>
+
+        <label class="card-field">
+          <span>メモ</span>
+          <textarea
+            v-model="row.memo"
+            class="memo-textarea"
+            maxlength="500"
+            wrap="soft"
+            :class="{ 'cell-error': !!rowErrors[row.localKey]?.memo }"
+            :disabled="isFieldDisabled(row, 'memo')"
+            @input="handleCellInput(row, 'memo')"
+          />
+          <small v-if="rowErrors[row.localKey]?.memo" class="field-error">
+            {{ rowErrors[row.localKey]?.memo }}
+          </small>
+        </label>
+
+        <small v-if="rowErrors[row.localKey]?.id" class="field-error">
+          {{ rowErrors[row.localKey]?.id }}
+        </small>
+
+        <div class="card-actions">
+          <button
+            type="button"
+            class="danger-button"
+            :disabled="loading || saving"
+            @click="deleteRow(row)"
+          >
+            削除
+          </button>
+          <button
+            v-if="!row.deleted"
+            type="button"
+            class="secondary-button"
+            :disabled="loading || saving || isBlankNewRow(row)"
+            @click="copyRow(row)"
+          >
+            コピー
+          </button>
+        </div>
+      </article>
+    </div>
   </section>
 </template>

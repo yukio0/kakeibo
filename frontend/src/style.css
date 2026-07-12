@@ -640,6 +640,58 @@ textarea:focus {
   text-decoration: line-through;
 }
 
+/* スマホ用のカード表示。既定は非表示にし、狭幅時にテーブルと排他で切り替える。 */
+.transaction-cards {
+  display: none;
+}
+
+.transaction-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  background: #ffffff;
+}
+
+.card-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.card-field > span {
+  color: #475569;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* iOS Safari が入力フォーカス時に自動ズームしないよう16px以上を明示する。 */
+.transaction-card input,
+.transaction-card select,
+.transaction-card textarea {
+  font-size: 16px;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* 表とカードの切り替え。テーブルは約1100px必要なため、狭幅ではカードに寄せる。 */
+@media (max-width: 768px) {
+  .table-wrap {
+    display: none;
+  }
+
+  .transaction-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+}
+
 @media (max-width: 640px) {
   .app-header {
     align-items: flex-start;

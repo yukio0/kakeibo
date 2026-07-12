@@ -54,6 +54,16 @@ class AuthApiTests {
   }
 
   @Test
+  fun pwaAssetsAreReachableWithoutAuthentication() {
+    // manifest とアイコンは未認証でも取得できる必要がある。テスト用classpathに実体は無いので、
+    // 401(認証で拒否)ではなく 404(認証を通過して未検出)になることで permitAll を検証する。
+    listOf("/site.webmanifest", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png")
+      .forEach { path ->
+        mockMvc.perform(get(path)).andExpect(status().isNotFound)
+      }
+  }
+
+  @Test
   fun responsesCarryNoindexRobotsHeader() {
     // 認証前の公開エンドポイントにも、保護済みAPIにも noindex が付くことを確認する
     mockMvc
