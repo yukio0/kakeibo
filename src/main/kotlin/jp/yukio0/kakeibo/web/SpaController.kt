@@ -13,6 +13,7 @@ class SpaController {
         "/login",
         "/mfa/verify",
         "/categories",
+        "/csv-export",
         "/payment-methods",
         "/password",
         "/mfa/settings",

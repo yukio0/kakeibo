@@ -15,6 +15,19 @@ interface TransactionRepository : JpaRepository<TransactionEntity, Long> {
     endDateExclusive: LocalDate,
   ): List<TransactionEntity>
 
+  @EntityGraph(
+    attributePaths = ["category", "paymentMethod", "transferSource", "transferDestination"]
+  )
+  fun findAllByOrderByTransactionDateAscDisplayOrderAscIdAsc(): List<TransactionEntity>
+
+  @EntityGraph(
+    attributePaths = ["category", "paymentMethod", "transferSource", "transferDestination"]
+  )
+  fun findAllByTransactionDateGreaterThanEqualAndTransactionDateLessThanEqualOrderByTransactionDateAscDisplayOrderAscIdAsc(
+    startDate: LocalDate,
+    endDate: LocalDate,
+  ): List<TransactionEntity>
+
   fun existsByCategoryId(categoryId: Long): Boolean
 
   fun existsByPaymentMethodId(paymentMethodId: Long): Boolean

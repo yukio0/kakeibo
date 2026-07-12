@@ -289,8 +289,17 @@ export function getTransactions(year: number, month: number): Promise<Transactio
   return apiRequest<Transaction[]>(`/api/transactions?year=${year}&month=${month}`)
 }
 
-export function exportMonthlyTransactions(year: number, month: number): Promise<Blob> {
-  return apiBlobRequest(`/api/transactions/export?year=${year}&month=${month}`, {
+export function exportTransactions(startDate?: string, endDate?: string): Promise<Blob | null> {
+  const searchParams = new URLSearchParams()
+  if (startDate) {
+    searchParams.set('startDate', startDate)
+  }
+  if (endDate) {
+    searchParams.set('endDate', endDate)
+  }
+  const query = searchParams.size > 0 ? `?${searchParams}` : ''
+
+  return apiBlobRequest(`/api/transactions/export${query}`, {
     fallbackMessage: 'CSVの出力に失敗しました',
   })
 }

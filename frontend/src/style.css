@@ -293,6 +293,16 @@ button:disabled {
   grid-template-columns: minmax(220px, 1fr) minmax(140px, 0.4fr) auto;
 }
 
+.csv-export-option {
+  display: grid;
+  gap: 1rem;
+}
+
+.csv-export-option + .csv-export-option {
+  padding-top: 1.5rem;
+  border-top: 1px solid #e5e7eb;
+}
+
 .field {
   display: grid;
   gap: 0.4rem;

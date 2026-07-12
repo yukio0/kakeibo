@@ -41,10 +41,20 @@ test('家計簿を1件入力して自動保存後に再表示する', async ({ p
   await expect(savedRow.locator('input[type="number"]')).toHaveValue('1234')
   await saveScreenshot(page, testInfo, 'transaction-reloaded')
 
+  await page.getByRole('link', { name: 'CSV出力', exact: true }).click()
   const downloadPromise = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'CSV出力', exact: true }).click()
+  await page.getByRole('button', { name: '累積のCSVを出力', exact: true }).click()
   const download = await downloadPromise
-  expect(download.suggestedFilename()).toBe('kakeibo-' + currentLocalDate().slice(0, 7) + '.csv')
+  expect(download.suggestedFilename()).toBe('kakeibo-all.csv')
+})
+
+test('CSV出力でデータがない場合はファイルを出力しない', async ({ page }) => {
+  await loginThroughMfa(page)
+
+  await page.getByRole('link', { name: 'CSV出力', exact: true }).click()
+  await page.getByRole('button', { name: '累積のCSVを出力', exact: true }).click()
+
+  await expect(page.getByText('期間内にデータがありません', { exact: true })).toBeVisible()
 })
 
 test('金額が未入力の行では金額セルにエラーを表示する', async ({ page }, testInfo) => {

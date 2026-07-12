@@ -52,8 +52,14 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   return (await response.text()) as T
 }
 
-export async function apiBlobRequest(path: string, options: RequestOptions = {}): Promise<Blob> {
+export async function apiBlobRequest(
+  path: string,
+  options: RequestOptions = {},
+): Promise<Blob | null> {
   const response = await sendRequest(path, options)
+  if (response.status === 204) {
+    return null
+  }
   return response.blob()
 }
 

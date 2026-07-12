@@ -33,8 +33,11 @@ class TransactionService(
   }
 
   @Transactional(readOnly = true)
-  fun exportMonthlyCsv(monthlyPeriod: MonthlyPeriod): ByteArray {
-    val rows = findMonthlyTransactions(monthlyPeriod).map { it.toResponse() }
+  fun exportCsv(exportPeriod: TransactionExportPeriod): ByteArray? {
+    val rows = findTransactionsForExport(exportPeriod).map { it.toResponse() }
+    if (rows.isEmpty()) {
+      return null
+    }
     val csv = buildString {
       appendCsvRow(
         this,
@@ -379,6 +382,19 @@ class TransactionService(
         monthlyPeriod.startDate,
         monthlyPeriod.endDateExclusive,
       )
+
+  private fun findTransactionsForExport(
+    exportPeriod: TransactionExportPeriod
+  ): List<TransactionEntity> =
+    if (exportPeriod.isAll) {
+      transactionRepository.findAllByOrderByTransactionDateAscDisplayOrderAscIdAsc()
+    } else {
+      transactionRepository
+        .findAllByTransactionDateGreaterThanEqualAndTransactionDateLessThanEqualOrderByTransactionDateAscDisplayOrderAscIdAsc(
+          requireNotNull(exportPeriod.startDate),
+          requireNotNull(exportPeriod.endDate),
+        )
+    }
 
   private fun TransactionType.toCsvLabel(): String =
     when (this) {

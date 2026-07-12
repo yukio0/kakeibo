@@ -8,6 +8,8 @@ import jp.yukio0.kakeibo.paymentmethod.PaymentMethodEntity
 import jp.yukio0.kakeibo.paymentmethod.PaymentMethodRepository
 import org.hamcrest.Matchers.hasSize
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -169,11 +171,11 @@ class TransactionApiTests {
 
     val csv =
       mockMvc
-        .perform(get("/api/transactions/export").param("year", "2026").param("month", "7"))
+        .perform(get("/api/transactions/export"))
         .andExpect(status().isOk)
         .andExpect(content().contentType(MediaType("text", "csv", Charsets.UTF_8)))
         .andExpect(
-          header().string("Content-Disposition", "attachment; filename=\"kakeibo-2026-07.csv\"")
+          header().string("Content-Disposition", "attachment; filename=\"kakeibo-all.csv\"")
         )
         .andReturn()
         .response
@@ -207,7 +209,11 @@ class TransactionApiTests {
 
     val csv =
       mockMvc
-        .perform(get("/api/transactions/export").param("year", "2026").param("month", "7"))
+        .perform(
+          get("/api/transactions/export")
+            .param("startDate", "2026-07-01")
+            .param("endDate", "2026-07-31")
+        )
         .andExpect(status().isOk)
         .andReturn()
         .response
@@ -219,6 +225,104 @@ class TransactionApiTests {
         "\"2026-07-15\",\"支出\",\"'=HYPERLINK(\"\"http://evil\"\")\",\"現金\",\"500\",\"'@SUM(A1)\"\r\n",
       String(csv, Charsets.UTF_8),
     )
+  }
+
+  @Test
+  fun exportTransactionsReturnsOnlySpecifiedPeriod() {
+    val category =
+      categoryRepository.saveAndFlush(
+        CategoryEntity(
+          name = "期間CSV出力カテゴリ",
+          type = TransactionType.EXPENSE,
+          displayOrder = 942,
+        )
+      )
+    saveTransaction(
+      category = category,
+      transactionDate = LocalDate.of(2026, 6, 30),
+      amount = 100,
+      memo = "期間前",
+      displayOrder = 0,
+    )
+    saveTransaction(
+      category = category,
+      transactionDate = LocalDate.of(2026, 7, 1),
+      amount = 200,
+      memo = "期間内の先頭",
+      displayOrder = 1,
+    )
+    saveTransaction(
+      category = category,
+      transactionDate = LocalDate.of(2026, 7, 31),
+      amount = 300,
+      memo = "期間内の末尾",
+      displayOrder = 0,
+    )
+    saveTransaction(
+      category = category,
+      transactionDate = LocalDate.of(2026, 8, 1),
+      amount = 400,
+      memo = "期間後",
+      displayOrder = 0,
+    )
+
+    val csv =
+      mockMvc
+        .perform(
+          get("/api/transactions/export")
+            .param("startDate", "2026-07-01")
+            .param("endDate", "2026-07-31")
+        )
+        .andExpect(status().isOk)
+        .andExpect(
+          header()
+            .string(
+              "Content-Disposition",
+              "attachment; filename=\"kakeibo-2026-07-01-2026-07-31.csv\"",
+            )
+        )
+        .andReturn()
+        .response
+        .contentAsString
+
+    assertTrue(csv.contains("期間内の先頭"))
+    assertTrue(csv.contains("期間内の末尾"))
+    assertFalse(csv.contains("期間前"))
+    assertFalse(csv.contains("期間後"))
+  }
+
+  @Test
+  fun exportTransactionsReturnsNoContentWhenThereIsNoData() {
+    mockMvc
+      .perform(get("/api/transactions/export"))
+      .andExpect(status().isNoContent)
+      .andExpect(content().string(""))
+
+    mockMvc
+      .perform(
+        get("/api/transactions/export")
+          .param("startDate", "2099-01-01")
+          .param("endDate", "2099-12-31")
+      )
+      .andExpect(status().isNoContent)
+      .andExpect(content().string(""))
+  }
+
+  @Test
+  fun exportTransactionsRejectsIncompleteOrReversedPeriod() {
+    mockMvc
+      .perform(get("/api/transactions/export").param("startDate", "2026-07-01"))
+      .andExpect(status().isBadRequest)
+      .andExpect(jsonPath("$.message").value("開始日と終了日を両方指定してください"))
+
+    mockMvc
+      .perform(
+        get("/api/transactions/export")
+          .param("startDate", "2026-08-01")
+          .param("endDate", "2026-07-31")
+      )
+      .andExpect(status().isBadRequest)
+      .andExpect(jsonPath("$.message").value("終了日は開始日以降を指定してください"))
   }
 
   @Test

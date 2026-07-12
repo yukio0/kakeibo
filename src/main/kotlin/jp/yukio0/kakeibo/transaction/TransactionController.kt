@@ -1,5 +1,6 @@
 package jp.yukio0.kakeibo.transaction
 
+import java.time.LocalDate
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -21,17 +22,21 @@ class TransactionController(private val transactionService: TransactionService) 
   ): List<TransactionResponse> = transactionService.findMonthly(year, month)
 
   @GetMapping("/export")
-  fun exportMonthly(
-    @RequestParam(required = false) year: Int?,
-    @RequestParam(required = false) month: Int?,
+  fun export(
+    @RequestParam(required = false) startDate: LocalDate?,
+    @RequestParam(required = false) endDate: LocalDate?,
   ): ResponseEntity<ByteArray> {
-    val monthlyPeriod = MonthlyPeriod.from(year, month)
-    val fileName = "kakeibo-%04d-%02d.csv".format(monthlyPeriod.year, monthlyPeriod.month)
+    val exportPeriod = TransactionExportPeriod.from(startDate, endDate)
+    val csv =
+      transactionService.exportCsv(exportPeriod) ?: return ResponseEntity.noContent().build()
 
     return ResponseEntity.ok()
       .contentType(MediaType("text", "csv", Charsets.UTF_8))
-      .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$fileName\"")
-      .body(transactionService.exportMonthlyCsv(monthlyPeriod))
+      .header(
+        HttpHeaders.CONTENT_DISPOSITION,
+        "attachment; filename=\"${exportPeriod.fileName()}\"",
+      )
+      .body(csv)
   }
 
   @PutMapping("/monthly")

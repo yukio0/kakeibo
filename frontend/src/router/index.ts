@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { authState, loadCurrentUser } from '@/auth'
 import CategoryView from '@/views/CategoryView.vue'
+import CsvExportView from '@/views/CsvExportView.vue'
 import LoginView from '@/views/LoginView.vue'
 import MfaSettingsView from '@/views/MfaSettingsView.vue'
 import MfaVerifyView from '@/views/MfaVerifyView.vue'
@@ -39,6 +40,11 @@ export const router = createRouter({
       path: '/categories',
       name: 'categories',
       component: CategoryView,
+    },
+    {
+      path: '/csv-export',
+      name: 'csv-export',
+      component: CsvExportView,
     },
     {
       path: '/payment-methods',
