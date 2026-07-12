@@ -650,19 +650,159 @@ textarea:focus {
   text-decoration: line-through;
 }
 
-/* スマホ用のカード表示。既定は非表示にし、狭幅時にテーブルと排他で切り替える。 */
-.transaction-cards {
+/* スマホ用の明細リスト。既定は非表示にし、狭幅時にテーブルと排他で切り替える。 */
+.transaction-mobile {
   display: none;
 }
 
-.transaction-card {
+.entry-add-button {
+  width: 100%;
+  margin-bottom: 0.75rem;
+}
+
+.entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid #94a3b8;
+  border-radius: 0.65rem;
+  background: #ffffff;
+  color: #111827;
+  text-align: left;
+  cursor: pointer;
+}
+
+.entry-item.type-expense {
+  border-left-color: #ef4444;
+}
+
+.entry-item.type-income {
+  border-left-color: #16a34a;
+}
+
+.entry-item.type-transfer {
+  border-left-color: #2563eb;
+}
+
+/* グローバルの button:hover(青塗り)を打ち消し、明細は控えめなホバーにする。 */
+.entry-item:hover {
+  background: #f8fafc;
+}
+
+.entry-item.entry-item-error {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+.entry-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.entry-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.entry-badge {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.entry-date {
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.entry-amount {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.entry-detail {
+  color: #334155;
+  font-size: 0.9rem;
+}
+
+.entry-memo {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 0.85rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 追加/編集用のボトムシート */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.sheet-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  max-height: 92vh;
+  border-radius: 1rem 1rem 0 0;
+  background: #ffffff;
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.sheet-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.sheet-close {
+  width: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #475569;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sheet-body {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-  padding: 1rem;
-  border: 1px solid #e5e7eb;
-  border-radius: 0.75rem;
-  background: #ffffff;
+  padding: 1.25rem;
+  overflow-y: auto;
 }
 
 .card-field {
@@ -677,28 +817,32 @@ textarea:focus {
 }
 
 /* iOS Safari が入力フォーカス時に自動ズームしないよう16px以上を明示する。 */
-.transaction-card input,
-.transaction-card select,
-.transaction-card textarea {
+.sheet-panel input,
+.sheet-panel select,
+.sheet-panel textarea {
   font-size: 16px;
 }
 
-.card-actions {
+.sheet-actions {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid #e5e7eb;
 }
 
-/* 表とカードの切り替え。テーブルは約1100px必要なため、狭幅ではカードに寄せる。 */
+.sheet-actions-spacer {
+  flex: 1;
+}
+
+/* 表と明細リストの切り替え。テーブルは約1100px必要なため、狭幅では明細+シートに寄せる。 */
 @media (max-width: 768px) {
   .table-wrap {
     display: none;
   }
 
-  .transaction-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
+  .transaction-mobile {
+    display: block;
   }
 }
 

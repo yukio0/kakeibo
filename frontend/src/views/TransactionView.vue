@@ -26,6 +26,7 @@ import {
   isTransactionField,
   isUnsavedEnteredRow,
   snapshotOf,
+  toRequest,
   toRow,
   type EditableField,
   type RowDefaults,
@@ -53,6 +54,23 @@ const loadError = ref<string | null>(null)
 const saveError = ref<string | null>(null)
 const rowErrors = reactive<Record<string, TransactionFieldErrors>>({})
 const savedSnapshot = ref('[]')
+
+// スマホ用の入力/編集シート。draft を編集し、保存時に rows へ反映してから自動保存する。
+const sheetOpen = ref(false)
+const sheetMode = ref<'create' | 'edit'>('create')
+const sheetRowKey = ref<string | null>(null)
+const draft = reactive<TransactionRow>({
+  localKey: 'draft',
+  id: null,
+  date: '',
+  type: 'EXPENSE',
+  categoryId: '',
+  paymentMethodId: '',
+  amount: '',
+  memo: '',
+  deleted: false,
+})
+const draftErrors = reactive<TransactionFieldErrors>({})
 
 const {
   activeRow,
@@ -83,6 +101,15 @@ const periodLabel = computed(() => `${period.year}年${period.month}月`)
 const hasDirtyChanges = computed(() => currentSnapshot() !== savedSnapshot.value)
 const activeRows = computed(() => rows.value.filter((row) => !row.deleted))
 const enteredRows = computed(() => activeRows.value.filter((row) => !isBlankNewRow(row)))
+// スマホの明細一覧は新しい順で読みやすくする(配列自体の並びは変えない)。
+const mobileEntries = computed(() =>
+  [...enteredRows.value].sort((left, right) => {
+    if (left.date !== right.date) {
+      return left.date < right.date ? 1 : -1
+    }
+    return left.localKey < right.localKey ? 1 : -1
+  }),
+)
 const categoryHeaderLabel = computed(() =>
   activeRow.value?.type === 'TRANSFER' ? '振替元' : 'カテゴリ',
 )
@@ -287,9 +314,8 @@ function deleteRow(row: TransactionRow): void {
   }
 }
 
-function handleTypeChange(row: TransactionRow): void {
-  clearFieldError(row, 'type')
-
+// 種別に合わせてカテゴリ/支払い方法の既定値を入れ直す。グリッドとシート双方から使う。
+function applyTypeDefaults(row: TransactionRow): void {
   if (row.type === 'TRANSFER') {
     if (!isTransferAccountId(row.categoryId)) {
       row.categoryId = defaultTransferAccountId()
@@ -306,7 +332,11 @@ function handleTypeChange(row: TransactionRow): void {
       row.paymentMethodId = defaultPaymentMethodId()
     }
   }
+}
 
+function handleTypeChange(row: TransactionRow): void {
+  clearFieldError(row, 'type')
+  applyTypeDefaults(row)
   handleCellInput(row, 'type')
 }
 
@@ -493,6 +523,131 @@ function defaultNewRowDate(): string {
   }
 
   return monthStartDate.value
+}
+
+function typeLabel(type: TransactionType): string {
+  if (type === 'INCOME') {
+    return '収入'
+  }
+  if (type === 'TRANSFER') {
+    return '振替'
+  }
+  return '支出'
+}
+
+function rowCategoryName(row: TransactionRow): string {
+  if (row.type === 'TRANSFER') {
+    return transferAccounts.value.find((account) => account.id === row.categoryId)?.name ?? ''
+  }
+  return categories.value.find((category) => category.id === row.categoryId)?.name ?? ''
+}
+
+function rowPaymentName(row: TransactionRow): string {
+  if (row.type === 'TRANSFER') {
+    return transferAccounts.value.find((account) => account.id === row.paymentMethodId)?.name ?? ''
+  }
+  return (
+    paymentMethods.value.find((paymentMethod) => paymentMethod.id === row.paymentMethodId)?.name ??
+    ''
+  )
+}
+
+function clearDraftErrors(): void {
+  Object.keys(draftErrors).forEach((key) => delete draftErrors[key as TransactionField])
+}
+
+function clearDraftError(field: TransactionField): void {
+  delete draftErrors[field]
+}
+
+function resetDraft(source: TransactionRow | null): void {
+  const base = source ?? createEmptyRow(rowDefaults())
+  draft.id = source?.id ?? null
+  draft.date = base.date
+  draft.type = base.type
+  draft.categoryId = base.categoryId
+  draft.paymentMethodId = base.paymentMethodId
+  draft.amount = base.amount
+  draft.memo = base.memo
+  draft.deleted = false
+}
+
+function openCreateSheet(): void {
+  resetDraft(null)
+  sheetMode.value = 'create'
+  sheetRowKey.value = null
+  clearDraftErrors()
+  sheetOpen.value = true
+}
+
+function openEditSheet(row: TransactionRow): void {
+  resetDraft(row)
+  sheetMode.value = 'edit'
+  sheetRowKey.value = row.localKey
+  clearDraftErrors()
+  sheetOpen.value = true
+}
+
+function closeSheet(): void {
+  sheetOpen.value = false
+}
+
+function changeDraftType(): void {
+  clearDraftError('type')
+  applyTypeDefaults(draft)
+}
+
+function submitSheet(): void {
+  clearDraftErrors()
+  const request = toRequest(draft, 0)
+  const found = validateEntries([{ row: draft, request }], validationContext())[draft.localKey]
+  if (found) {
+    Object.assign(draftErrors, found)
+    return
+  }
+
+  if (sheetMode.value === 'edit') {
+    const target = rows.value.find((row) => row.localKey === sheetRowKey.value)
+    if (target) {
+      applyDraftTo(target)
+    }
+  } else {
+    const created = createEmptyRow(rowDefaults())
+    applyDraftTo(created)
+    insertBeforeBlank(created)
+  }
+
+  ensureTrailingBlankRow()
+  closeSheet()
+  scheduleAutoSave(0)
+}
+
+function applyDraftTo(row: TransactionRow): void {
+  row.date = draft.date
+  row.type = draft.type
+  row.categoryId = draft.categoryId
+  row.paymentMethodId = draft.paymentMethodId
+  row.amount = draft.amount
+  row.memo = draft.memo
+}
+
+// 追加した行は末尾の空行の前に差し込む(空行は自動保存の対象外)。
+function insertBeforeBlank(newRow: TransactionRow): void {
+  const blankIndex = rows.value.findIndex((row) => !row.deleted && isBlankNewRow(row))
+  rows.value =
+    blankIndex === -1
+      ? [...rows.value, newRow]
+      : [...rows.value.slice(0, blankIndex), newRow, ...rows.value.slice(blankIndex)]
+}
+
+function deleteFromSheet(): void {
+  if (sheetMode.value === 'edit' && sheetRowKey.value) {
+    const target = rows.value.find((row) => row.localKey === sheetRowKey.value)
+    if (target) {
+      deleteRow(target)
+    }
+  }
+  closeSheet()
 }
 </script>
 
@@ -755,140 +910,160 @@ function defaultNewRowDate(): string {
       </table>
     </div>
 
-    <!-- 狭幅(スマホ)用: 横スクロールするテーブルの代わりに1件=1カードで縦積み表示する。
-         同じ rows / ハンドラにバインドしており、テーブルとはCSSで排他表示を切り替える。 -->
-    <div class="transaction-cards">
-      <p v-if="rows.length === 0" class="empty-cell">この月の家計簿データはまだありません。</p>
-      <article
-        v-for="row in rows"
-        :key="`card-${row.localKey}`"
-        class="transaction-card"
-        :class="{ 'deleted-row': row.deleted }"
+    <!-- 狭幅(スマホ)用: 一覧は読み取り専用の明細、追加/編集はボトムシートのフォームで行う。 -->
+    <div class="transaction-mobile">
+      <button
+        type="button"
+        class="entry-add-button"
+        :disabled="loading || saving"
+        @click="openCreateSheet"
       >
+        ＋ 追加
+      </button>
+
+      <p v-if="mobileEntries.length === 0" class="empty-cell">
+        この月の家計簿データはまだありません。
+      </p>
+
+      <ul v-else class="entry-list">
+        <li v-for="row in mobileEntries" :key="`entry-${row.localKey}`">
+          <button
+            type="button"
+            class="entry-item"
+            :class="[
+              `type-${row.type.toLowerCase()}`,
+              { 'entry-item-error': !!rowErrors[row.localKey] },
+            ]"
+            @click="openEditSheet(row)"
+          >
+            <span class="entry-line">
+              <span class="entry-head">
+                <span class="entry-badge">{{ typeLabel(row.type) }}</span>
+                <span class="entry-date">{{ row.date }}</span>
+              </span>
+              <span class="entry-amount">{{ formatCurrency(Number(row.amount) || 0) }}</span>
+            </span>
+            <span class="entry-detail">{{ rowCategoryName(row) }} → {{ rowPaymentName(row) }}</span>
+            <span v-if="row.memo" class="entry-memo">{{ row.memo }}</span>
+          </button>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 追加/編集用のボトムシート -->
+  <div v-if="sheetOpen" class="sheet-overlay" @click.self="closeSheet">
+    <div class="sheet-panel" role="dialog" aria-modal="true">
+      <div class="sheet-header">
+        <h2>{{ sheetMode === 'create' ? '家計簿を追加' : '家計簿を編集' }}</h2>
+        <button type="button" class="sheet-close" aria-label="閉じる" @click="closeSheet">×</button>
+      </div>
+
+      <div class="sheet-body">
         <label class="card-field">
           <span>日付</span>
           <input
-            v-model="row.date"
+            v-model="draft.date"
             type="date"
             required
-            :class="{ 'cell-error': !!rowErrors[row.localKey]?.date }"
             :min="monthStartDate"
             :max="monthEndDate"
-            :disabled="isFieldDisabled(row, 'date')"
-            @input="handleCellInput(row, 'date')"
+            :class="{ 'cell-error': !!draftErrors.date }"
+            @input="clearDraftError('date')"
           />
-          <small v-if="rowErrors[row.localKey]?.date" class="field-error">
-            {{ rowErrors[row.localKey]?.date }}
-          </small>
+          <small v-if="draftErrors.date" class="field-error">{{ draftErrors.date }}</small>
         </label>
 
         <label class="card-field">
           <span>種別</span>
           <select
-            v-model="row.type"
-            :class="{ 'cell-error': !!rowErrors[row.localKey]?.type }"
-            :disabled="isFieldDisabled(row, 'type')"
-            @change="handleTypeChange(row)"
+            v-model="draft.type"
+            :class="{ 'cell-error': !!draftErrors.type }"
+            @change="changeDraftType"
           >
             <option value="EXPENSE">支出</option>
             <option value="INCOME">収入</option>
             <option value="TRANSFER">振替</option>
           </select>
-          <small v-if="rowErrors[row.localKey]?.type" class="field-error">
-            {{ rowErrors[row.localKey]?.type }}
+          <small v-if="draftErrors.type" class="field-error">{{ draftErrors.type }}</small>
+        </label>
+
+        <label class="card-field">
+          <span>{{ draft.type === 'TRANSFER' ? '振替元' : 'カテゴリ' }}</span>
+          <select
+            v-model="draft.categoryId"
+            :class="{ 'cell-error': !!draftErrors.categoryId }"
+            @change="clearDraftError('categoryId')"
+          >
+            <option v-for="option in categoryOptions(draft)" :key="option.id" :value="option.id">
+              {{ option.name }}
+            </option>
+          </select>
+          <small v-if="draftErrors.categoryId" class="field-error">
+            {{ draftErrors.categoryId }}
           </small>
         </label>
 
         <label class="card-field">
-          <span>{{ row.type === 'TRANSFER' ? '振替元' : 'カテゴリ' }}</span>
+          <span>{{ draft.type === 'TRANSFER' ? '振替先' : '支払い方法' }}</span>
           <select
-            v-model="row.categoryId"
-            :class="{ 'cell-error': !!rowErrors[row.localKey]?.categoryId }"
-            :disabled="isFieldDisabled(row, 'categoryId')"
-            @change="handleCellInput(row, 'categoryId')"
+            v-model="draft.paymentMethodId"
+            :class="{ 'cell-error': !!draftErrors.paymentMethodId }"
+            @change="clearDraftError('paymentMethodId')"
           >
-            <option v-for="option in categoryOptions(row)" :key="option.id" :value="option.id">
+            <option
+              v-for="option in paymentMethodOptions(draft)"
+              :key="option.id"
+              :value="option.id"
+            >
               {{ option.name }}
             </option>
           </select>
-          <small v-if="rowErrors[row.localKey]?.categoryId" class="field-error">
-            {{ rowErrors[row.localKey]?.categoryId }}
-          </small>
-        </label>
-
-        <label class="card-field">
-          <span>{{ row.type === 'TRANSFER' ? '振替先' : '支払い方法' }}</span>
-          <select
-            v-model="row.paymentMethodId"
-            :class="{ 'cell-error': !!rowErrors[row.localKey]?.paymentMethodId }"
-            :disabled="isFieldDisabled(row, 'paymentMethodId')"
-            @change="handleCellInput(row, 'paymentMethodId')"
-          >
-            <option v-for="option in paymentMethodOptions(row)" :key="option.id" :value="option.id">
-              {{ option.name }}
-            </option>
-          </select>
-          <small v-if="rowErrors[row.localKey]?.paymentMethodId" class="field-error">
-            {{ rowErrors[row.localKey]?.paymentMethodId }}
+          <small v-if="draftErrors.paymentMethodId" class="field-error">
+            {{ draftErrors.paymentMethodId }}
           </small>
         </label>
 
         <label class="card-field">
           <span>金額</span>
           <input
-            v-model.number="row.amount"
+            v-model.number="draft.amount"
             type="number"
             min="1"
             inputmode="numeric"
-            :class="{ 'cell-error': !!rowErrors[row.localKey]?.amount }"
-            :disabled="isFieldDisabled(row, 'amount')"
-            @input="handleCellInput(row, 'amount')"
+            :class="{ 'cell-error': !!draftErrors.amount }"
+            @input="clearDraftError('amount')"
           />
-          <small v-if="rowErrors[row.localKey]?.amount" class="field-error">
-            {{ rowErrors[row.localKey]?.amount }}
-          </small>
+          <small v-if="draftErrors.amount" class="field-error">{{ draftErrors.amount }}</small>
         </label>
 
         <label class="card-field">
           <span>メモ</span>
           <textarea
-            v-model="row.memo"
+            v-model="draft.memo"
             class="memo-textarea"
             maxlength="500"
             wrap="soft"
-            :class="{ 'cell-error': !!rowErrors[row.localKey]?.memo }"
-            :disabled="isFieldDisabled(row, 'memo')"
-            @input="handleCellInput(row, 'memo')"
+            :class="{ 'cell-error': !!draftErrors.memo }"
+            @input="clearDraftError('memo')"
           />
-          <small v-if="rowErrors[row.localKey]?.memo" class="field-error">
-            {{ rowErrors[row.localKey]?.memo }}
-          </small>
+          <small v-if="draftErrors.memo" class="field-error">{{ draftErrors.memo }}</small>
         </label>
+      </div>
 
-        <small v-if="rowErrors[row.localKey]?.id" class="field-error">
-          {{ rowErrors[row.localKey]?.id }}
-        </small>
-
-        <div class="card-actions">
-          <button
-            type="button"
-            class="danger-button"
-            :disabled="loading || saving"
-            @click="deleteRow(row)"
-          >
-            削除
-          </button>
-          <button
-            v-if="!row.deleted"
-            type="button"
-            class="secondary-button"
-            :disabled="loading || saving || isBlankNewRow(row)"
-            @click="copyRow(row)"
-          >
-            コピー
-          </button>
-        </div>
-      </article>
+      <div class="sheet-actions">
+        <button
+          v-if="sheetMode === 'edit'"
+          type="button"
+          class="danger-button"
+          @click="deleteFromSheet"
+        >
+          削除
+        </button>
+        <span class="sheet-actions-spacer"></span>
+        <button type="button" class="secondary-button" @click="closeSheet">キャンセル</button>
+        <button type="button" @click="submitSheet">保存</button>
+      </div>
     </div>
-  </section>
+  </div>
 </template>
