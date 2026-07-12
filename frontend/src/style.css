@@ -671,6 +671,25 @@ textarea:focus {
   border-left: 3px solid #2563eb;
 }
 
+.unsaved-row td {
+  background: #fffbeb;
+}
+
+.unsaved-row td:first-child {
+  border-left: 3px solid #f59e0b;
+}
+
+.unsaved-badge {
+  align-self: center;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .deleted-row {
   background: #fff7f7;
 }

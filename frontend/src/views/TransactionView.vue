@@ -983,7 +983,11 @@ async function deleteFromSheet(): Promise<void> {
           <tr v-if="!loading && sortedRows.length === 0">
             <td colspan="7" class="empty-cell">この月の家計簿データはまだありません。</td>
           </tr>
-          <tr v-for="row in sortedRows" :key="row.localKey">
+          <tr
+            v-for="row in sortedRows"
+            :key="row.localKey"
+            :class="{ 'unsaved-row': isRowDirty(row) }"
+          >
             <td>
               <input
                 v-model="row.date"
@@ -1085,6 +1089,7 @@ async function deleteFromSheet(): Promise<void> {
               <small v-if="rowErrors[row.localKey]?.id" class="field-error">{{
                 rowErrors[row.localKey]?.id
               }}</small>
+              <span v-if="isRowDirty(row)" class="unsaved-badge">未保存</span>
               <button
                 type="button"
                 :disabled="loading || saving || !isRowDirty(row)"
