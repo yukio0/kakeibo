@@ -61,6 +61,34 @@ class TransactionService(
     return csv.toByteArray(StandardCharsets.UTF_8)
   }
 
+  @Transactional
+  fun create(year: Int?, month: Int?, request: TransactionSaveRequest): TransactionResponse =
+    saveOne(year, month, id = null, request)
+
+  @Transactional
+  fun update(
+    year: Int?,
+    month: Int?,
+    id: Long,
+    request: TransactionSaveRequest,
+  ): TransactionResponse = saveOne(year, month, id, request)
+
+  @Transactional
+  fun delete(year: Int?, month: Int?, id: Long) {
+    val monthlyPeriod = MonthlyPeriod.from(year, month)
+    val requests = findMonthlyTransactions(monthlyPeriod).map { it.toMonthlySaveRequest() }
+    val index = requests.indexOfFirst { it.id == id }
+    if (index == -1) {
+      throw ResourceNotFoundException("家計簿データが見つかりません")
+    }
+
+    saveMonthly(
+      monthlyPeriod.year,
+      monthlyPeriod.month,
+      requests.filterIndexed { i, _ -> i != index },
+    )
+  }
+
   /** 保存後の家計簿データを、リクエストと同じ並びで返す。呼び出し側は位置で新規行のIDを引き当てられる。 */
   @Transactional
   fun saveMonthly(
@@ -141,6 +169,44 @@ class TransactionService(
     }
 
     return savedTransactions.map { it.toResponse() }
+  }
+
+  private fun saveOne(
+    year: Int?,
+    month: Int?,
+    id: Long?,
+    request: TransactionSaveRequest,
+  ): TransactionResponse {
+    val monthlyPeriod = MonthlyPeriod.from(year, month)
+    val requests =
+      findMonthlyTransactions(monthlyPeriod).map { it.toMonthlySaveRequest() }.toMutableList()
+    val index =
+      if (id == null) {
+        requests.size
+      } else {
+        requests
+          .indexOfFirst { it.id == id }
+          .also {
+            if (it == -1) {
+              throw ResourceNotFoundException("家計簿データが見つかりません")
+            }
+          }
+      }
+    val displayOrder =
+      if (id == null) {
+        (requests.maxOfOrNull { it.displayOrder ?: 0 } ?: -10) + 10
+      } else {
+        requests[index].displayOrder ?: 0
+      }
+    val saveRequest = request.toMonthlySaveRequest(id, displayOrder)
+
+    if (id == null) {
+      requests.add(saveRequest)
+    } else {
+      requests[index] = saveRequest
+    }
+
+    return saveMonthly(monthlyPeriod.year, monthlyPeriod.month, requests)[index]
   }
 
   private fun validateBeanConstraints(requests: List<TransactionMonthlySaveRequest>) {
@@ -288,6 +354,46 @@ class TransactionService(
     if (errors.isNotEmpty()) {
       throw ApiValidationException("種別に合うカテゴリを選択してください", errors)
     }
+  }
+
+  private fun TransactionSaveRequest.toMonthlySaveRequest(
+    id: Long?,
+    displayOrder: Int,
+  ): TransactionMonthlySaveRequest =
+    TransactionMonthlySaveRequest(
+      id = id,
+      date = date,
+      type = type,
+      categoryId = categoryId,
+      paymentMethodId = paymentMethodId,
+      amount = amount,
+      memo = memo,
+      displayOrder = displayOrder,
+    )
+
+  private fun TransactionEntity.toMonthlySaveRequest(): TransactionMonthlySaveRequest {
+    val categoryId: Long
+    val paymentMethodId: Long
+
+    if (type == TransactionType.TRANSFER) {
+      categoryId = (transferSource ?: error("Transfer source is not assigned")).requiredId()
+      paymentMethodId =
+        (transferDestination ?: error("Transfer destination is not assigned")).requiredId()
+    } else {
+      categoryId = (category ?: error("Category is not assigned")).requiredId()
+      paymentMethodId = (paymentMethod ?: error("Payment method is not assigned")).requiredId()
+    }
+
+    return TransactionMonthlySaveRequest(
+      id = requiredId(),
+      date = transactionDate.toString(),
+      type = type,
+      categoryId = categoryId,
+      paymentMethodId = paymentMethodId,
+      amount = amount,
+      memo = memo,
+      displayOrder = displayOrder,
+    )
   }
 
   /** [validateBeanConstraints] を通過済みのリクエストだけを受け取るため、null 許容の項目はすべて確定している。 */

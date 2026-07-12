@@ -17,7 +17,10 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.MediaType
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -104,6 +107,102 @@ class TransactionApiTests {
       .andExpect(jsonPath("$[0].displayOrder").value(1))
       .andExpect(jsonPath("$[1].id").value(first.id!!.toInt()))
       .andExpect(jsonPath("$[1].date").value("2026-07-01"))
+  }
+
+  @Test
+  fun individualSaveEndpointsCreateUpdateAndDeleteOnlyTheTargetRow() {
+    val category =
+      categoryRepository.saveAndFlush(
+        CategoryEntity(
+          name = "個別保存APIカテゴリ",
+          type = TransactionType.EXPENSE,
+          displayOrder = 930,
+        )
+      )
+    val existing =
+      saveTransaction(
+        category = category,
+        transactionDate = LocalDate.of(2026, 7, 1),
+        amount = 500,
+        memo = "既存データ",
+        displayOrder = 1,
+      )
+
+    mockMvc
+      .perform(
+        post("/api/transactions")
+          .param("year", "2026")
+          .param("month", "7")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(
+            """
+            {
+              "date": "2026-07-02",
+              "type": "EXPENSE",
+              "categoryId": ${category.requiredId()},
+              "paymentMethodId": ${defaultPaymentMethod().requiredId()},
+              "amount": 1000,
+              "memo": "新規データ"
+            }
+            """
+              .trimIndent()
+          )
+      )
+      .andExpect(status().isCreated)
+      .andExpect(jsonPath("$.date").value("2026-07-02"))
+      .andExpect(jsonPath("$.amount").value(1000))
+
+    val created = transactionRepository.findAll().single { it.memo == "新規データ" }
+
+    mockMvc
+      .perform(
+        put("/api/transactions/${created.requiredId()}")
+          .param("year", "2026")
+          .param("month", "7")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(
+            """
+            {
+              "date": "2026-07-03",
+              "type": "EXPENSE",
+              "categoryId": ${category.requiredId()},
+              "paymentMethodId": ${defaultPaymentMethod().requiredId()},
+              "amount": 1200,
+              "memo": "更新後"
+            }
+            """
+              .trimIndent()
+          )
+      )
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$.id").value(created.requiredId().toInt()))
+      .andExpect(jsonPath("$.amount").value(1200))
+
+    val monthlyRows =
+      transactionRepository
+        .findAllByTransactionDateGreaterThanEqualAndTransactionDateLessThanOrderByDisplayOrderAscIdAsc(
+          LocalDate.of(2026, 7, 1),
+          LocalDate.of(2026, 8, 1),
+        )
+    assertEquals(
+      setOf(existing.requiredId(), created.requiredId()),
+      monthlyRows.map { it.requiredId() }.toSet(),
+    )
+    assertEquals("既存データ", monthlyRows.single { it.requiredId() == existing.requiredId() }.memo)
+
+    mockMvc
+      .perform(
+        delete("/api/transactions/${created.requiredId()}")
+          .param("year", "2026")
+          .param("month", "7")
+      )
+      .andExpect(status().isNoContent)
+
+    mockMvc
+      .perform(get("/api/transactions").param("year", "2026").param("month", "7"))
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$", hasSize<Int>(1)))
+      .andExpect(jsonPath("$[0].id").value(existing.requiredId().toInt()))
   }
 
   @Test

@@ -7,6 +7,17 @@ import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 import jp.yukio0.kakeibo.domain.TransactionType
 
+data class TransactionSaveRequest(
+  @field:NotBlank(message = "日付を入力してください") val date: String?,
+  @field:NotNull(message = "種別を選択してください") val type: TransactionType?,
+  val categoryId: Long?,
+  val paymentMethodId: Long?,
+  @field:NotNull(message = "金額を入力してください")
+  @field:Min(value = 1, message = "金額は1以上で入力してください")
+  val amount: Int?,
+  @field:Size(max = 500, message = "メモは500文字以内で入力してください") val memo: String?,
+)
+
 data class TransactionMonthlySaveRequest(
   @field:Positive(message = "IDは正の整数で入力してください") val id: Long?,
   @field:NotBlank(message = "日付を入力してください") val date: String?,

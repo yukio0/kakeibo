@@ -590,6 +590,29 @@ textarea:focus {
   font-size: 0.9rem;
 }
 
+.sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  white-space: nowrap;
+}
+
+.sort-button {
+  min-width: 1.35rem;
+  padding: 0.1rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: #64748b;
+  font: inherit;
+  line-height: 1;
+}
+
+.sort-button:hover {
+  background: #e2e8f0;
+  color: #1d4ed8;
+}
+
 .transaction-table td:nth-child(1) {
   min-width: 170px;
 }
@@ -638,6 +661,14 @@ textarea:focus {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.new-transaction-row {
+  background: #eff6ff;
+}
+
+.new-transaction-row td:first-child {
+  border-left: 3px solid #2563eb;
 }
 
 .deleted-row {

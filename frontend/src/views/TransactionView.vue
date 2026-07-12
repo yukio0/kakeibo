@@ -1,41 +1,41 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ApiError, toMessage } from '@/api/http'
 import {
+  createTransaction,
+  deleteTransaction,
   getCategories,
   getMonthlySummary,
   getPaymentMethods,
-  getTransferAccounts,
   getTransactions,
-  saveMonthlyTransactions,
+  getTransferAccounts,
+  updateTransaction,
   type Category,
   type MonthlySummary,
   type PaymentMethod,
   type Transaction,
+  type TransactionSaveRequest,
   type TransactionType,
   type TransferAccount,
 } from '@/api/kakeibo'
-import { useCellNavigation } from '@/composables/useCellNavigation'
 import { compareByDisplayOrder, compareCategories } from '@/masters'
 import { formatDate, pad2 } from '@/transactions/dates'
 import {
-  buildSaveEntries,
   createCopiedRow,
   createEmptyRow,
   isBlankNewRow,
   isTransactionField,
-  isUnsavedEnteredRow,
-  snapshotOf,
   toRequest,
   toRow,
-  type EditableField,
   type RowDefaults,
-  type SaveEntry,
   type TransactionField,
   type TransactionFieldErrors,
   type TransactionRow,
 } from '@/transactions/rowModel'
 import { validateEntries, type ValidationContext } from '@/transactions/validation'
+
+type SortField = 'date' | 'type' | 'category' | 'paymentMethod' | 'amount'
+type SortDirection = 'asc' | 'desc'
 
 const today = new Date()
 const period = reactive({
@@ -47,15 +47,26 @@ const categories = ref<Category[]>([])
 const paymentMethods = ref<PaymentMethod[]>([])
 const transferAccounts = ref<TransferAccount[]>([])
 const rows = ref<TransactionRow[]>([])
+const newRow = reactive(
+  createEmptyRow({
+    date: formatDate(today),
+    categoryId: '',
+    paymentMethodId: '',
+  }),
+)
 const persistedSummary = ref<MonthlySummary | null>(null)
+const savedRowSnapshots = ref<Record<string, string>>({})
 const loading = ref(true)
 const saving = ref(false)
 const loadError = ref<string | null>(null)
 const saveError = ref<string | null>(null)
 const rowErrors = reactive<Record<string, TransactionFieldErrors>>({})
-const savedSnapshot = ref('[]')
+const activeType = ref<TransactionType>('EXPENSE')
+const sort = reactive<{ field: SortField; direction: SortDirection }>({
+  field: 'date',
+  direction: 'asc',
+})
 
-// スマホ用の入力/編集シート。draft を編集し、保存時に rows へ反映してから自動保存する。
 const sheetOpen = ref(false)
 const sheetMode = ref<'create' | 'edit'>('create')
 const sheetRowKey = ref<string | null>(null)
@@ -72,25 +83,6 @@ const draft = reactive<TransactionRow>({
 })
 const draftErrors = reactive<TransactionFieldErrors>({})
 
-const {
-  activeRow,
-  startCellEdit,
-  isActiveCell,
-  handleCellKeydown,
-  focusCell,
-  focusFirstError,
-  createFocusRestoreTarget,
-  restoreFocus,
-} = useCellNavigation({
-  rows,
-  isFieldDisabled,
-  rowDefaults,
-  onRowRestored: (row) => {
-    clearRowError(row)
-    scheduleAutoSave()
-  },
-})
-
 const monthInputValue = computed(() => `${period.year}-${pad2(period.month)}`)
 const monthStartDate = computed(() => `${monthInputValue.value}-01`)
 const monthEndDate = computed(() => {
@@ -98,37 +90,37 @@ const monthEndDate = computed(() => {
   return `${monthInputValue.value}-${pad2(lastDay)}`
 })
 const periodLabel = computed(() => `${period.year}年${period.month}月`)
-const hasDirtyChanges = computed(() => currentSnapshot() !== savedSnapshot.value)
-const activeRows = computed(() => rows.value.filter((row) => !row.deleted))
-const enteredRows = computed(() => activeRows.value.filter((row) => !isBlankNewRow(row)))
-// スマホの明細一覧は新しい順で読みやすくする(配列自体の並びは変えない)。
+const enteredRows = computed(() => rows.value)
+const categoryHeaderLabel = computed(() =>
+  activeType.value === 'TRANSFER' ? '振替元' : 'カテゴリ',
+)
+const paymentMethodHeaderLabel = computed(() =>
+  activeType.value === 'TRANSFER' ? '振替先' : '支払い方法',
+)
+const sortedRows = computed(() => [...rows.value].sort(compareRows))
 const mobileEntries = computed(() =>
-  [...enteredRows.value].sort((left, right) => {
+  [...rows.value].sort((left, right) => {
     if (left.date !== right.date) {
       return left.date < right.date ? 1 : -1
     }
-    return left.localKey < right.localKey ? 1 : -1
+    return (right.id ?? 0) - (left.id ?? 0)
   }),
 )
-const categoryHeaderLabel = computed(() =>
-  activeRow.value?.type === 'TRANSFER' ? '振替元' : 'カテゴリ',
-)
-const paymentMethodHeaderLabel = computed(() =>
-  activeRow.value?.type === 'TRANSFER' ? '振替先' : '支払い方法',
+const hasDirtyChanges = computed(
+  () => !isBlankNewRow(newRow) || rows.value.some((row) => isRowDirty(row)),
 )
 const screenSummary = computed(() => {
-  const totals = activeRows.value.reduce(
+  const totals = rows.value.reduce(
     (current, row) => {
-      if (row.amount === '' || isBlankNewRow(row)) {
+      const amount = Number(row.amount)
+      if (!Number.isInteger(amount) || amount < 1) {
         return current
       }
-
       if (row.type === 'INCOME') {
-        current.incomeTotal += Number(row.amount)
+        current.incomeTotal += amount
       } else if (row.type === 'EXPENSE') {
-        current.expenseTotal += Number(row.amount)
+        current.expenseTotal += amount
       }
-
       current.balance = current.incomeTotal - current.expenseTotal
       return current
     },
@@ -142,8 +134,7 @@ const screenSummary = computed(() => {
   return totals
 })
 
-let autoSaveTimer: number | undefined
-let autoSaveRequested = false
+const nameCollator = new Intl.Collator('ja')
 
 onMounted(() => {
   void loadMonth()
@@ -174,10 +165,10 @@ async function loadMonth(): Promise<void> {
     paymentMethods.value = [...paymentMethodItems].sort(compareByDisplayOrder)
     transferAccounts.value = [...transferAccountItems].sort(compareByDisplayOrder)
     rows.value = transactionItems.map(toRow)
-    sortRowsByDate()
-    ensureTrailingBlankRow()
+    captureSavedRowSnapshots()
     persistedSummary.value = monthlySummary
-    savedSnapshot.value = currentSnapshot()
+    resetNewRow()
+    closeSheet()
   } catch (error) {
     loadError.value = toMessage(error)
   } finally {
@@ -185,78 +176,82 @@ async function loadMonth(): Promise<void> {
   }
 }
 
-async function autoSaveMonth(): Promise<void> {
-  if (loading.value) {
+async function registerNewRow(): Promise<void> {
+  if (loading.value || saving.value || !validateRow(newRow)) {
     return
   }
 
-  if (saving.value) {
-    autoSaveRequested = true
-    return
-  }
-
-  if (!hasDirtyChanges.value) {
-    return
-  }
-
-  // 保存の直前に日付順へ整える(入力停止後の自然な区切りで並び替える)。
-  sortRowsByDate()
-  const entries = buildSaveEntries(rows.value)
-  saveError.value = null
-  clearRowErrors()
-
-  const validationErrors = validateEntries(entries, validationContext())
-  if (Object.keys(validationErrors).length > 0) {
-    Object.assign(rowErrors, validationErrors)
-    saveError.value = '入力内容に誤りがあります'
-    focusFirstError(entries, rowErrors)
-    return
-  }
-
-  const includesNewRows = entries.some((entry) => entry.row.id === null)
-  const focusRestoreTarget = createFocusRestoreTarget(entries)
   saving.value = true
-
+  saveError.value = null
   try {
-    const savedTransactions = await saveMonthlyTransactions(
-      period.year,
-      period.month,
-      entries.map((entry) => entry.request),
-    )
-    applySavedIds(entries, savedTransactions)
-
-    persistedSummary.value = await getMonthlySummary(period.year, period.month)
-    savedSnapshot.value = JSON.stringify(
-      entries.map((entry) => ({ ...entry.request, id: entry.row.id })),
-    )
-    ensureTrailingBlankRow()
-
-    if (includesNewRows) {
-      restoreFocus(focusRestoreTarget)
-    }
+    const saved = await createTransaction(period.year, period.month, toSaveRequest(newRow))
+    const created = toRow(saved)
+    rows.value = [...rows.value, created]
+    captureSavedRow(created)
+    await refreshPersistedSummary()
+    resetNewRow()
+    await focusNewRowDate()
   } catch (error) {
-    if (error instanceof ApiError) {
-      applyApiErrors(error, entries)
-      focusFirstError(entries, rowErrors)
-    }
-    saveError.value = toMessage(error)
+    applySaveError(error, newRow)
   } finally {
     saving.value = false
-    if (autoSaveRequested) {
-      autoSaveRequested = false
-      scheduleAutoSave()
-    }
   }
 }
 
-/** 保存APIはリクエストと同じ並びで返すため、位置で新規行のIDを引き当てられる。 */
-function applySavedIds(entries: SaveEntry[], savedTransactions: Transaction[]): void {
-  entries.forEach((entry, index) => {
-    const saved = savedTransactions[index]
-    if (saved) {
-      entry.row.id = saved.id
-    }
-  })
+async function updateRow(row: TransactionRow): Promise<void> {
+  if (loading.value || saving.value || !isRowDirty(row) || !validateRow(row)) {
+    return
+  }
+
+  saving.value = true
+  saveError.value = null
+  try {
+    const saved = await updateTransaction(
+      row.id ?? 0,
+      period.year,
+      period.month,
+      toSaveRequest(row),
+    )
+    applyTransaction(row, saved)
+    captureSavedRow(row)
+    await refreshPersistedSummary()
+  } catch (error) {
+    applySaveError(error, row)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function deleteRow(row: TransactionRow): Promise<void> {
+  if (loading.value || saving.value || row.id === null) {
+    return
+  }
+
+  saving.value = true
+  saveError.value = null
+  try {
+    await deleteTransaction(row.id, period.year, period.month)
+    rows.value = rows.value.filter((current) => current.localKey !== row.localKey)
+    delete savedRowSnapshots.value[row.localKey]
+    clearRowError(row)
+    await refreshPersistedSummary()
+  } catch (error) {
+    saveError.value = toMessage(error)
+  } finally {
+    saving.value = false
+  }
+}
+
+function copyRow(row: TransactionRow): void {
+  if (loading.value || saving.value) {
+    return
+  }
+
+  const copied = createCopiedRow(row)
+  Object.assign(newRow, copied)
+  activeType.value = newRow.type
+  clearRowError(newRow)
+  void focusNewRowDate()
 }
 
 function validationContext(): ValidationContext {
@@ -269,15 +264,56 @@ function validationContext(): ValidationContext {
   }
 }
 
-function scheduleAutoSave(delay = 700): void {
-  if (autoSaveTimer !== undefined) {
-    window.clearTimeout(autoSaveTimer)
+function validateRow(row: TransactionRow): boolean {
+  clearRowError(row)
+  const request = toRequest(row, 0)
+  const errors = validateEntries([{ row, request }], validationContext())[row.localKey]
+  if (!errors) {
+    return true
   }
 
-  autoSaveTimer = window.setTimeout(() => {
-    autoSaveTimer = undefined
-    void autoSaveMonth()
-  }, delay)
+  rowErrors[row.localKey] = errors
+  saveError.value = '入力内容に誤りがあります'
+  return false
+}
+
+function toSaveRequest(row: TransactionRow): TransactionSaveRequest {
+  const request = toRequest(row, 0)
+  return {
+    date: request.date,
+    type: row.type,
+    categoryId: request.categoryId,
+    paymentMethodId: request.paymentMethodId,
+    amount: request.amount,
+    memo: request.memo,
+  }
+}
+
+function applyTransaction(row: TransactionRow, transaction: Transaction): void {
+  row.id = transaction.id
+  row.date = transaction.date
+  row.type = transaction.type
+  row.categoryId = transaction.categoryId
+  row.paymentMethodId = transaction.paymentMethodId
+  row.amount = transaction.amount
+  row.memo = transaction.memo ?? ''
+}
+
+async function refreshPersistedSummary(): Promise<void> {
+  persistedSummary.value = await getMonthlySummary(period.year, period.month)
+}
+
+function resetNewRow(): void {
+  const previousKey = newRow.localKey
+  Object.assign(newRow, createEmptyRow(rowDefaults()))
+  delete rowErrors[previousKey]
+  clearRowError(newRow)
+  activeType.value = newRow.type
+}
+
+async function focusNewRowDate(): Promise<void> {
+  await nextTick()
+  document.querySelector<HTMLInputElement>('[data-new-row-field="date"]')?.focus()
 }
 
 function rowDefaults(): RowDefaults {
@@ -288,36 +324,19 @@ function rowDefaults(): RowDefaults {
   }
 }
 
-function copyRow(row: TransactionRow): void {
-  const copiedRow = createCopiedRow(row)
-  const rowIndex = rows.value.findIndex((current) => current.localKey === row.localKey)
-
-  if (rowIndex === -1) {
-    rows.value = [...rows.value, copiedRow]
-  } else {
-    rows.value = [
-      ...rows.value.slice(0, rowIndex + 1),
-      copiedRow,
-      ...rows.value.slice(rowIndex + 1),
-    ]
-  }
-
-  ensureTrailingBlankRow()
-  focusCell(copiedRow.localKey, 'date')
-  scheduleAutoSave()
+function handleTypeChange(row: TransactionRow): void {
+  activeType.value = row.type
+  clearFieldError(row, 'type')
+  applyTypeDefaults(row)
+  clearFieldError(row, 'categoryId')
+  clearFieldError(row, 'paymentMethodId')
 }
 
-function deleteRow(row: TransactionRow): void {
-  clearRowError(row)
-
-  rows.value = rows.value.filter((current) => current.localKey !== row.localKey)
-  ensureTrailingBlankRow()
-  if (row.id !== null) {
-    scheduleAutoSave(0)
-  }
+function handleFieldInput(row: TransactionRow, field: TransactionField): void {
+  activeType.value = row.type
+  clearFieldError(row, field)
 }
 
-// 種別に合わせてカテゴリ/支払い方法の既定値を入れ直す。グリッドとシート双方から使う。
 function applyTypeDefaults(row: TransactionRow): void {
   if (row.type === 'TRANSFER') {
     if (!isTransferAccountId(row.categoryId)) {
@@ -326,21 +345,16 @@ function applyTypeDefaults(row: TransactionRow): void {
     if (!isTransferAccountId(row.paymentMethodId)) {
       row.paymentMethodId = defaultTransferAccountId()
     }
-  } else {
-    const selectedCategory = categories.value.find((category) => category.id === row.categoryId)
-    if (selectedCategory?.type !== row.type) {
-      row.categoryId = defaultCategoryId(row.type)
-    }
-    if (!isPaymentMethodId(row.paymentMethodId)) {
-      row.paymentMethodId = defaultPaymentMethodId()
-    }
+    return
   }
-}
 
-function handleTypeChange(row: TransactionRow): void {
-  clearFieldError(row, 'type')
-  applyTypeDefaults(row)
-  handleCellInput(row, 'type')
+  const selectedCategory = categories.value.find((category) => category.id === row.categoryId)
+  if (selectedCategory?.type !== row.type) {
+    row.categoryId = defaultCategoryId(row.type)
+  }
+  if (!isPaymentMethodId(row.paymentMethodId)) {
+    row.paymentMethodId = defaultPaymentMethodId()
+  }
 }
 
 function handleMonthInput(event: Event): void {
@@ -350,7 +364,6 @@ function handleMonthInput(event: Event): void {
     input.value = monthInputValue.value
     return
   }
-
   if (!confirmDiscardChanges()) {
     input.value = monthInputValue.value
     return
@@ -373,40 +386,29 @@ function moveMonth(offset: number): void {
   void loadMonth()
 }
 
+function confirmDiscardChanges(): boolean {
+  if (!hasDirtyChanges.value) {
+    return true
+  }
+  return window.confirm('未保存の変更があります。破棄して月を移動しますか？')
+}
+
 function categoriesForType(type: TransactionType): Category[] {
   return categories.value.filter((category) => category.type === type)
 }
 
 function categoryOptions(row: TransactionRow): Category[] | TransferAccount[] {
-  if (row.type === 'TRANSFER') {
-    return transferAccounts.value
-  }
-  return categoriesForType(row.type)
+  return row.type === 'TRANSFER' ? transferAccounts.value : categoriesForType(row.type)
 }
 
 function paymentMethodOptions(row: TransactionRow): PaymentMethod[] | TransferAccount[] {
-  if (row.type === 'TRANSFER') {
-    return transferAccounts.value
-  }
-  return paymentMethods.value
+  return row.type === 'TRANSFER' ? transferAccounts.value : paymentMethods.value
 }
 
-function handleCellInput(row: TransactionRow, field: TransactionField): void {
-  clearFieldError(row, field)
-  ensureTrailingBlankRow()
-  scheduleAutoSave()
-}
-
-function clearFieldError(row: TransactionRow, field: TransactionField): void {
-  if (rowErrors[row.localKey]) {
-    delete rowErrors[row.localKey][field]
-  }
-}
-
-function isFieldDisabled(row: TransactionRow, field: EditableField): boolean {
+function isFieldDisabled(row: TransactionRow, field: TransactionField): boolean {
   return (
-    row.deleted ||
     loading.value ||
+    saving.value ||
     (field === 'memo' && row.id === null && !isAmountLikelyValid(row))
   )
 }
@@ -415,108 +417,8 @@ function isAmountLikelyValid(row: TransactionRow): boolean {
   return typeof row.amount === 'number' && Number.isInteger(row.amount) && row.amount >= 1
 }
 
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('ja-JP', {
-    style: 'currency',
-    currency: 'JPY',
-    maximumFractionDigits: 0,
-  }).format(value)
-}
-
-function persistedSummaryText(): string {
-  if (!persistedSummary.value) {
-    return '未取得'
-  }
-
-  return [
-    `収入 ${formatCurrency(persistedSummary.value.incomeTotal)}`,
-    `支出 ${formatCurrency(persistedSummary.value.expenseTotal)}`,
-    `差額 ${formatCurrency(persistedSummary.value.balance)}`,
-  ].join(' / ')
-}
-
-function currentSnapshot(): string {
-  return snapshotOf(buildSaveEntries(rows.value))
-}
-
-function confirmDiscardChanges(): boolean {
-  if (!hasDirtyChanges.value) {
-    return true
-  }
-
-  return window.confirm('未保存の変更があります。破棄して月を移動しますか？')
-}
-
-function applyApiErrors(error: ApiError, entries: SaveEntry[]): void {
-  error.errors.forEach((fieldError) => {
-    const match = fieldError.field.match(/^\[(\d+)]\.(.+)$/)
-    if (!match) {
-      return
-    }
-
-    const index = Number(match[1])
-    const field = match[2]
-    const entry = entries[index]
-    if (!entry || !isTransactionField(field)) {
-      return
-    }
-
-    rowErrors[entry.row.localKey] = {
-      ...rowErrors[entry.row.localKey],
-      [field]: fieldError.message,
-    }
-  })
-}
-
-function clearRowErrors(): void {
-  Object.keys(rowErrors).forEach((key) => {
-    delete rowErrors[key]
-  })
-}
-
-function clearRowError(row: TransactionRow): void {
-  delete rowErrors[row.localKey]
-}
-
-// PC表示(テーブル)は日付の古い順(上→下)。空の新規行は末尾に残し、同日は元の順序を保つ(安定ソート)。
-// 表示・Tab移動・保存順を一致させるため配列そのものを並べ替える。入力中は動かさず、読込時と保存時にだけ適用する。
-function sortRowsByDate(): void {
-  rows.value = [...rows.value].sort((left, right) => {
-    const leftBlank = isBlankNewRow(left)
-    const rightBlank = isBlankNewRow(right)
-    if (leftBlank !== rightBlank) {
-      return leftBlank ? 1 : -1
-    }
-    if (leftBlank || left.date === right.date) {
-      return 0
-    }
-    return left.date < right.date ? -1 : 1
-  })
-}
-
-function ensureTrailingBlankRow(): void {
-  const editableRows = rows.value.filter((row) => !row.deleted)
-  if (editableRows.some(isUnsavedEnteredRow)) {
-    const blankRowKeys = new Set(
-      editableRows.filter((row) => isBlankNewRow(row)).map((row) => row.localKey),
-    )
-    if (blankRowKeys.size > 0) {
-      rows.value = rows.value.filter((row) => row.deleted || !blankRowKeys.has(row.localKey))
-    }
-    return
-  }
-
-  const lastRow = editableRows[editableRows.length - 1]
-  if (!lastRow || !isBlankNewRow(lastRow)) {
-    rows.value = [...rows.value, createEmptyRow(rowDefaults())]
-  }
-}
-
 function defaultCategoryId(type: TransactionType): number | '' {
-  if (type === 'TRANSFER') {
-    return defaultTransferAccountId()
-  }
-  return categoriesForType(type)[0]?.id ?? ''
+  return type === 'TRANSFER' ? defaultTransferAccountId() : (categoriesForType(type)[0]?.id ?? '')
 }
 
 function defaultPaymentMethodId(): number | '' {
@@ -537,11 +439,140 @@ function isPaymentMethodId(value: number | ''): boolean {
 
 function defaultNewRowDate(): string {
   const todayValue = formatDate(today)
-  if (todayValue >= monthStartDate.value && todayValue <= monthEndDate.value) {
-    return todayValue
-  }
+  return todayValue >= monthStartDate.value && todayValue <= monthEndDate.value
+    ? todayValue
+    : monthStartDate.value
+}
 
-  return monthStartDate.value
+function toggleSort(field: SortField): void {
+  if (sort.field === field) {
+    sort.direction = sort.direction === 'asc' ? 'desc' : 'asc'
+  } else {
+    sort.field = field
+    sort.direction = 'asc'
+  }
+}
+
+function sortIcon(field: SortField): string {
+  if (sort.field !== field) {
+    return '⇅'
+  }
+  return sort.direction === 'asc' ? '↑' : '↓'
+}
+
+function sortButtonLabel(label: string, field: SortField): string {
+  const nextDirection = sort.field === field && sort.direction === 'asc' ? '降順' : '昇順'
+  return `${label}を${nextDirection}で並び替え`
+}
+
+function compareRows(left: TransactionRow, right: TransactionRow): number {
+  const primary = compareBySortField(left, right)
+  if (primary !== 0) {
+    return sort.direction === 'asc' ? primary : -primary
+  }
+  if (left.date !== right.date) {
+    return left.date < right.date ? -1 : 1
+  }
+  return (left.id ?? 0) - (right.id ?? 0)
+}
+
+function compareBySortField(left: TransactionRow, right: TransactionRow): number {
+  switch (sort.field) {
+    case 'date':
+      return left.date.localeCompare(right.date)
+    case 'type':
+      return typeSortOrder(left.type) - typeSortOrder(right.type)
+    case 'category':
+      return nameCollator.compare(rowCategoryName(left), rowCategoryName(right))
+    case 'paymentMethod':
+      return nameCollator.compare(rowPaymentName(left), rowPaymentName(right))
+    case 'amount':
+      return Number(left.amount) - Number(right.amount)
+  }
+}
+
+function typeSortOrder(type: TransactionType): number {
+  if (type === 'INCOME') {
+    return 1
+  }
+  if (type === 'TRANSFER') {
+    return 2
+  }
+  return 0
+}
+
+function rowSnapshot(row: TransactionRow): string {
+  return JSON.stringify(toSaveRequest(row))
+}
+
+function isRowDirty(row: TransactionRow): boolean {
+  return savedRowSnapshots.value[row.localKey] !== rowSnapshot(row)
+}
+
+function captureSavedRowSnapshots(): void {
+  savedRowSnapshots.value = Object.fromEntries(
+    rows.value.map((row) => [row.localKey, rowSnapshot(row)]),
+  )
+}
+
+function captureSavedRow(row: TransactionRow): void {
+  savedRowSnapshots.value = {
+    ...savedRowSnapshots.value,
+    [row.localKey]: rowSnapshot(row),
+  }
+}
+
+function applySaveError(error: unknown, row: TransactionRow): void {
+  if (error instanceof ApiError) {
+    applyApiErrors(error, row)
+  }
+  saveError.value = toMessage(error)
+}
+
+function applyApiErrors(error: ApiError, row: TransactionRow): void {
+  error.errors.forEach((fieldError) => {
+    const field = fieldError.field.replace(/^\[\d+\]\./, '')
+    if (!isTransactionField(field)) {
+      return
+    }
+    rowErrors[row.localKey] = {
+      ...rowErrors[row.localKey],
+      [field]: fieldError.message,
+    }
+  })
+}
+
+function clearRowErrors(): void {
+  Object.keys(rowErrors).forEach((key) => delete rowErrors[key])
+}
+
+function clearRowError(row: TransactionRow): void {
+  delete rowErrors[row.localKey]
+}
+
+function clearFieldError(row: TransactionRow, field: TransactionField): void {
+  if (rowErrors[row.localKey]) {
+    delete rowErrors[row.localKey][field]
+  }
+}
+
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat('ja-JP', {
+    style: 'currency',
+    currency: 'JPY',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
+function persistedSummaryText(): string {
+  if (!persistedSummary.value) {
+    return '未取得'
+  }
+  return [
+    `収入 ${formatCurrency(persistedSummary.value.incomeTotal)}`,
+    `支出 ${formatCurrency(persistedSummary.value.expenseTotal)}`,
+    `差額 ${formatCurrency(persistedSummary.value.balance)}`,
+  ].join(' / ')
 }
 
 function typeLabel(type: TransactionType): string {
@@ -604,6 +635,7 @@ function openEditSheet(row: TransactionRow): void {
   sheetMode.value = 'edit'
   sheetRowKey.value = row.localKey
   clearDraftErrors()
+  activeType.value = row.type
   sheetOpen.value = true
 }
 
@@ -614,9 +646,11 @@ function closeSheet(): void {
 function changeDraftType(): void {
   clearDraftError('type')
   applyTypeDefaults(draft)
+  clearDraftError('categoryId')
+  clearDraftError('paymentMethodId')
 }
 
-function submitSheet(): void {
+async function submitSheet(): Promise<void> {
   clearDraftErrors()
   const request = toRequest(draft, 0)
   const found = validateEntries([{ row: draft, request }], validationContext())[draft.localKey]
@@ -624,49 +658,59 @@ function submitSheet(): void {
     Object.assign(draftErrors, found)
     return
   }
-
-  if (sheetMode.value === 'edit') {
-    const target = rows.value.find((row) => row.localKey === sheetRowKey.value)
-    if (target) {
-      applyDraftTo(target)
-    }
-  } else {
-    const created = createEmptyRow(rowDefaults())
-    applyDraftTo(created)
-    insertBeforeBlank(created)
+  if (saving.value) {
+    return
   }
 
-  ensureTrailingBlankRow()
-  closeSheet()
-  scheduleAutoSave(0)
-}
-
-function applyDraftTo(row: TransactionRow): void {
-  row.date = draft.date
-  row.type = draft.type
-  row.categoryId = draft.categoryId
-  row.paymentMethodId = draft.paymentMethodId
-  row.amount = draft.amount
-  row.memo = draft.memo
-}
-
-// 追加した行は末尾の空行の前に差し込む(空行は自動保存の対象外)。
-function insertBeforeBlank(newRow: TransactionRow): void {
-  const blankIndex = rows.value.findIndex((row) => !row.deleted && isBlankNewRow(row))
-  rows.value =
-    blankIndex === -1
-      ? [...rows.value, newRow]
-      : [...rows.value.slice(0, blankIndex), newRow, ...rows.value.slice(blankIndex)]
-}
-
-function deleteFromSheet(): void {
-  if (sheetMode.value === 'edit' && sheetRowKey.value) {
-    const target = rows.value.find((row) => row.localKey === sheetRowKey.value)
-    if (target) {
-      deleteRow(target)
+  saving.value = true
+  saveError.value = null
+  try {
+    if (sheetMode.value === 'edit') {
+      const target = rows.value.find((row) => row.localKey === sheetRowKey.value)
+      if (!target || target.id === null) {
+        return
+      }
+      const saved = await updateTransaction(
+        target.id,
+        period.year,
+        period.month,
+        toSaveRequest(draft),
+      )
+      applyTransaction(target, saved)
+      captureSavedRow(target)
+    } else {
+      const saved = await createTransaction(period.year, period.month, toSaveRequest(draft))
+      const created = toRow(saved)
+      rows.value = [...rows.value, created]
+      captureSavedRow(created)
     }
+    await refreshPersistedSummary()
+    closeSheet()
+  } catch (error) {
+    if (error instanceof ApiError) {
+      error.errors.forEach((fieldError) => {
+        const field = fieldError.field.replace(/^\[\d+\]\./, '')
+        if (isTransactionField(field)) {
+          draftErrors[field] = fieldError.message
+        }
+      })
+    }
+    saveError.value = toMessage(error)
+  } finally {
+    saving.value = false
   }
-  closeSheet()
+}
+
+async function deleteFromSheet(): Promise<void> {
+  const target = rows.value.find((row) => row.localKey === sheetRowKey.value)
+  if (!target) {
+    closeSheet()
+    return
+  }
+  await deleteRow(target)
+  if (!rows.value.some((row) => row.localKey === target.localKey)) {
+    closeSheet()
+  }
 }
 </script>
 
@@ -751,99 +795,240 @@ function deleteFromSheet(): void {
       <table class="transaction-table">
         <thead>
           <tr>
-            <th scope="col">日付</th>
-            <th scope="col">種別</th>
-            <th scope="col">{{ categoryHeaderLabel }}</th>
-            <th scope="col">{{ paymentMethodHeaderLabel }}</th>
-            <th scope="col">金額</th>
+            <th scope="col">
+              <span class="sort-header"
+                >日付<button
+                  type="button"
+                  class="sort-button"
+                  :aria-label="sortButtonLabel('日付', 'date')"
+                  @click="toggleSort('date')"
+                >
+                  {{ sortIcon('date') }}
+                </button></span
+              >
+            </th>
+            <th scope="col">
+              <span class="sort-header"
+                >種別<button
+                  type="button"
+                  class="sort-button"
+                  :aria-label="sortButtonLabel('種別', 'type')"
+                  @click="toggleSort('type')"
+                >
+                  {{ sortIcon('type') }}
+                </button></span
+              >
+            </th>
+            <th scope="col">
+              <span class="sort-header"
+                >{{ categoryHeaderLabel
+                }}<button
+                  type="button"
+                  class="sort-button"
+                  :aria-label="sortButtonLabel(categoryHeaderLabel, 'category')"
+                  @click="toggleSort('category')"
+                >
+                  {{ sortIcon('category') }}
+                </button></span
+              >
+            </th>
+            <th scope="col">
+              <span class="sort-header"
+                >{{ paymentMethodHeaderLabel
+                }}<button
+                  type="button"
+                  class="sort-button"
+                  :aria-label="sortButtonLabel(paymentMethodHeaderLabel, 'paymentMethod')"
+                  @click="toggleSort('paymentMethod')"
+                >
+                  {{ sortIcon('paymentMethod') }}
+                </button></span
+              >
+            </th>
+            <th scope="col">
+              <span class="sort-header"
+                >金額<button
+                  type="button"
+                  class="sort-button"
+                  :aria-label="sortButtonLabel('金額', 'amount')"
+                  @click="toggleSort('amount')"
+                >
+                  {{ sortIcon('amount') }}
+                </button></span
+              >
+            </th>
             <th scope="col">メモ</th>
             <th scope="col">操作</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-if="rows.length === 0">
-            <td colspan="7" class="empty-cell">この月の家計簿データはまだありません。</td>
-          </tr>
-          <tr v-for="row in rows" :key="row.localKey" :class="{ 'deleted-row': row.deleted }">
+          <tr class="new-transaction-row">
             <td>
               <input
-                v-model="row.date"
+                v-model="newRow.date"
                 type="date"
                 required
-                :class="{
-                  'active-cell': isActiveCell(row, 'date'),
-                  'cell-error': !!rowErrors[row.localKey]?.date,
-                }"
-                :data-cell-key="row.localKey"
-                data-cell-field="date"
+                data-new-row-field="date"
+                :class="{ 'cell-error': !!rowErrors[newRow.localKey]?.date }"
                 :min="monthStartDate"
                 :max="monthEndDate"
-                :disabled="isFieldDisabled(row, 'date')"
-                @focus="startCellEdit(row, 'date')"
-                @input="handleCellInput(row, 'date')"
-                @keydown="handleCellKeydown($event, row, 'date')"
+                :disabled="isFieldDisabled(newRow, 'date')"
+                @focus="activeType = newRow.type"
+                @input="handleFieldInput(newRow, 'date')"
               />
-              <small v-if="rowErrors[row.localKey]?.date" class="field-error">
-                {{ rowErrors[row.localKey]?.date }}
-              </small>
+              <small v-if="rowErrors[newRow.localKey]?.date" class="field-error">{{
+                rowErrors[newRow.localKey]?.date
+              }}</small>
             </td>
             <td>
               <select
-                v-model="row.type"
-                :class="{
-                  'active-cell': isActiveCell(row, 'type'),
-                  'cell-error': !!rowErrors[row.localKey]?.type,
-                }"
-                :data-cell-key="row.localKey"
-                data-cell-field="type"
-                :disabled="isFieldDisabled(row, 'type')"
-                @focus="startCellEdit(row, 'type')"
-                @change="handleTypeChange(row)"
-                @keydown="handleCellKeydown($event, row, 'type')"
+                v-model="newRow.type"
+                :class="{ 'cell-error': !!rowErrors[newRow.localKey]?.type }"
+                :disabled="isFieldDisabled(newRow, 'type')"
+                @change="handleTypeChange(newRow)"
               >
                 <option value="EXPENSE">支出</option>
                 <option value="INCOME">収入</option>
                 <option value="TRANSFER">振替</option>
               </select>
-              <small v-if="rowErrors[row.localKey]?.type" class="field-error">
-                {{ rowErrors[row.localKey]?.type }}
-              </small>
+              <small v-if="rowErrors[newRow.localKey]?.type" class="field-error">{{
+                rowErrors[newRow.localKey]?.type
+              }}</small>
+            </td>
+            <td>
+              <select
+                v-model="newRow.categoryId"
+                :class="{ 'cell-error': !!rowErrors[newRow.localKey]?.categoryId }"
+                :disabled="isFieldDisabled(newRow, 'categoryId')"
+                @focus="activeType = newRow.type"
+                @change="handleFieldInput(newRow, 'categoryId')"
+              >
+                <option
+                  v-for="option in categoryOptions(newRow)"
+                  :key="option.id"
+                  :value="option.id"
+                >
+                  {{ option.name }}
+                </option>
+              </select>
+              <small v-if="rowErrors[newRow.localKey]?.categoryId" class="field-error">{{
+                rowErrors[newRow.localKey]?.categoryId
+              }}</small>
+            </td>
+            <td>
+              <select
+                v-model="newRow.paymentMethodId"
+                :class="{ 'cell-error': !!rowErrors[newRow.localKey]?.paymentMethodId }"
+                :disabled="isFieldDisabled(newRow, 'paymentMethodId')"
+                @focus="activeType = newRow.type"
+                @change="handleFieldInput(newRow, 'paymentMethodId')"
+              >
+                <option
+                  v-for="option in paymentMethodOptions(newRow)"
+                  :key="option.id"
+                  :value="option.id"
+                >
+                  {{ option.name }}
+                </option>
+              </select>
+              <small v-if="rowErrors[newRow.localKey]?.paymentMethodId" class="field-error">{{
+                rowErrors[newRow.localKey]?.paymentMethodId
+              }}</small>
+            </td>
+            <td>
+              <input
+                v-model.number="newRow.amount"
+                type="number"
+                min="1"
+                inputmode="numeric"
+                :class="{ 'cell-error': !!rowErrors[newRow.localKey]?.amount }"
+                :disabled="isFieldDisabled(newRow, 'amount')"
+                @focus="activeType = newRow.type"
+                @input="handleFieldInput(newRow, 'amount')"
+              />
+              <small v-if="rowErrors[newRow.localKey]?.amount" class="field-error">{{
+                rowErrors[newRow.localKey]?.amount
+              }}</small>
+            </td>
+            <td>
+              <textarea
+                v-model="newRow.memo"
+                class="memo-textarea"
+                maxlength="500"
+                wrap="soft"
+                :class="{ 'cell-error': !!rowErrors[newRow.localKey]?.memo }"
+                :disabled="isFieldDisabled(newRow, 'memo')"
+                @focus="activeType = newRow.type"
+                @input="handleFieldInput(newRow, 'memo')"
+              />
+              <small v-if="rowErrors[newRow.localKey]?.memo" class="field-error">{{
+                rowErrors[newRow.localKey]?.memo
+              }}</small>
+            </td>
+            <td class="table-actions-cell">
+              <button type="button" :disabled="loading || saving" @click="registerNewRow">
+                {{ saving ? '登録中...' : '登録' }}
+              </button>
+            </td>
+          </tr>
+          <tr v-if="!loading && sortedRows.length === 0">
+            <td colspan="7" class="empty-cell">この月の家計簿データはまだありません。</td>
+          </tr>
+          <tr v-for="row in sortedRows" :key="row.localKey">
+            <td>
+              <input
+                v-model="row.date"
+                type="date"
+                required
+                :class="{ 'cell-error': !!rowErrors[row.localKey]?.date }"
+                :min="monthStartDate"
+                :max="monthEndDate"
+                :disabled="isFieldDisabled(row, 'date')"
+                @focus="activeType = row.type"
+                @input="handleFieldInput(row, 'date')"
+              />
+              <small v-if="rowErrors[row.localKey]?.date" class="field-error">{{
+                rowErrors[row.localKey]?.date
+              }}</small>
+            </td>
+            <td>
+              <select
+                v-model="row.type"
+                :class="{ 'cell-error': !!rowErrors[row.localKey]?.type }"
+                :disabled="isFieldDisabled(row, 'type')"
+                @change="handleTypeChange(row)"
+              >
+                <option value="EXPENSE">支出</option>
+                <option value="INCOME">収入</option>
+                <option value="TRANSFER">振替</option>
+              </select>
+              <small v-if="rowErrors[row.localKey]?.type" class="field-error">{{
+                rowErrors[row.localKey]?.type
+              }}</small>
             </td>
             <td>
               <select
                 v-model="row.categoryId"
-                :class="{
-                  'active-cell': isActiveCell(row, 'categoryId'),
-                  'cell-error': !!rowErrors[row.localKey]?.categoryId,
-                }"
-                :data-cell-key="row.localKey"
-                data-cell-field="categoryId"
+                :class="{ 'cell-error': !!rowErrors[row.localKey]?.categoryId }"
                 :disabled="isFieldDisabled(row, 'categoryId')"
-                @focus="startCellEdit(row, 'categoryId')"
-                @change="handleCellInput(row, 'categoryId')"
-                @keydown="handleCellKeydown($event, row, 'categoryId')"
+                @focus="activeType = row.type"
+                @change="handleFieldInput(row, 'categoryId')"
               >
                 <option v-for="option in categoryOptions(row)" :key="option.id" :value="option.id">
                   {{ option.name }}
                 </option>
               </select>
-              <small v-if="rowErrors[row.localKey]?.categoryId" class="field-error">
-                {{ rowErrors[row.localKey]?.categoryId }}
-              </small>
+              <small v-if="rowErrors[row.localKey]?.categoryId" class="field-error">{{
+                rowErrors[row.localKey]?.categoryId
+              }}</small>
             </td>
             <td>
               <select
                 v-model="row.paymentMethodId"
-                :class="{
-                  'active-cell': isActiveCell(row, 'paymentMethodId'),
-                  'cell-error': !!rowErrors[row.localKey]?.paymentMethodId,
-                }"
-                :data-cell-key="row.localKey"
-                data-cell-field="paymentMethodId"
+                :class="{ 'cell-error': !!rowErrors[row.localKey]?.paymentMethodId }"
                 :disabled="isFieldDisabled(row, 'paymentMethodId')"
-                @focus="startCellEdit(row, 'paymentMethodId')"
-                @change="handleCellInput(row, 'paymentMethodId')"
-                @keydown="handleCellKeydown($event, row, 'paymentMethodId')"
+                @focus="activeType = row.type"
+                @change="handleFieldInput(row, 'paymentMethodId')"
               >
                 <option
                   v-for="option in paymentMethodOptions(row)"
@@ -853,59 +1038,59 @@ function deleteFromSheet(): void {
                   {{ option.name }}
                 </option>
               </select>
-              <small v-if="rowErrors[row.localKey]?.paymentMethodId" class="field-error">
-                {{ rowErrors[row.localKey]?.paymentMethodId }}
-              </small>
+              <small v-if="rowErrors[row.localKey]?.paymentMethodId" class="field-error">{{
+                rowErrors[row.localKey]?.paymentMethodId
+              }}</small>
             </td>
             <td>
               <input
                 v-model.number="row.amount"
                 type="number"
-                :class="{
-                  'active-cell': isActiveCell(row, 'amount'),
-                  'cell-error': !!rowErrors[row.localKey]?.amount,
-                }"
-                :data-cell-key="row.localKey"
-                data-cell-field="amount"
                 min="1"
                 inputmode="numeric"
+                :class="{ 'cell-error': !!rowErrors[row.localKey]?.amount }"
                 :disabled="isFieldDisabled(row, 'amount')"
-                @focus="startCellEdit(row, 'amount')"
-                @input="handleCellInput(row, 'amount')"
-                @keydown="handleCellKeydown($event, row, 'amount')"
+                @focus="activeType = row.type"
+                @input="handleFieldInput(row, 'amount')"
               />
-              <small v-if="rowErrors[row.localKey]?.amount" class="field-error">
-                {{ rowErrors[row.localKey]?.amount }}
-              </small>
+              <small v-if="rowErrors[row.localKey]?.amount" class="field-error">{{
+                rowErrors[row.localKey]?.amount
+              }}</small>
             </td>
             <td>
               <textarea
                 v-model="row.memo"
                 class="memo-textarea"
-                :class="{
-                  'active-cell': isActiveCell(row, 'memo'),
-                  'cell-error': !!rowErrors[row.localKey]?.memo,
-                }"
-                :data-cell-key="row.localKey"
-                data-cell-field="memo"
                 maxlength="500"
                 wrap="soft"
+                :class="{ 'cell-error': !!rowErrors[row.localKey]?.memo }"
                 :disabled="isFieldDisabled(row, 'memo')"
-                @focus="startCellEdit(row, 'memo')"
-                @input="handleCellInput(row, 'memo')"
-                @keydown="handleCellKeydown($event, row, 'memo')"
+                @focus="activeType = row.type"
+                @input="handleFieldInput(row, 'memo')"
               />
-              <small v-if="rowErrors[row.localKey]?.memo" class="field-error">
-                {{ rowErrors[row.localKey]?.memo }}
-              </small>
+              <small v-if="rowErrors[row.localKey]?.memo" class="field-error">{{
+                rowErrors[row.localKey]?.memo
+              }}</small>
             </td>
             <td class="table-actions-cell">
-              <small v-if="rowErrors[row.localKey]?.displayOrder" class="field-error">
-                {{ rowErrors[row.localKey]?.displayOrder }}
-              </small>
-              <small v-if="rowErrors[row.localKey]?.id" class="field-error">
-                {{ rowErrors[row.localKey]?.id }}
-              </small>
+              <small v-if="rowErrors[row.localKey]?.id" class="field-error">{{
+                rowErrors[row.localKey]?.id
+              }}</small>
+              <button
+                type="button"
+                :disabled="loading || saving || !isRowDirty(row)"
+                @click="updateRow(row)"
+              >
+                {{ saving ? '更新中...' : '更新' }}
+              </button>
+              <button
+                type="button"
+                class="secondary-button"
+                :disabled="loading || saving"
+                @click="copyRow(row)"
+              >
+                コピー
+              </button>
               <button
                 type="button"
                 class="danger-button"
@@ -914,22 +1099,12 @@ function deleteFromSheet(): void {
               >
                 削除
               </button>
-              <button
-                v-if="!row.deleted"
-                type="button"
-                class="secondary-button"
-                :disabled="loading || saving || isBlankNewRow(row)"
-                @click="copyRow(row)"
-              >
-                コピー
-              </button>
             </td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <!-- 狭幅(スマホ)用: 一覧は読み取り専用の明細、追加/編集はボトムシートのフォームで行う。 -->
     <div class="transaction-mobile">
       <button
         type="button"
@@ -939,11 +1114,9 @@ function deleteFromSheet(): void {
       >
         ＋ 追加
       </button>
-
       <p v-if="mobileEntries.length === 0" class="empty-cell">
         この月の家計簿データはまだありません。
       </p>
-
       <ul v-else class="entry-list">
         <li v-for="row in mobileEntries" :key="`entry-${row.localKey}`">
           <button
@@ -955,13 +1128,12 @@ function deleteFromSheet(): void {
             ]"
             @click="openEditSheet(row)"
           >
-            <span class="entry-line">
-              <span class="entry-head">
-                <span class="entry-badge">{{ typeLabel(row.type) }}</span>
-                <span class="entry-date">{{ row.date }}</span>
-              </span>
-              <span class="entry-amount">{{ formatCurrency(Number(row.amount) || 0) }}</span>
-            </span>
+            <span class="entry-line"
+              ><span class="entry-head"
+                ><span class="entry-badge">{{ typeLabel(row.type) }}</span
+                ><span class="entry-date">{{ row.date }}</span></span
+              ><span class="entry-amount">{{ formatCurrency(Number(row.amount) || 0) }}</span></span
+            >
             <span class="entry-detail">{{ rowCategoryName(row) }} → {{ rowPaymentName(row) }}</span>
             <span v-if="row.memo" class="entry-memo">{{ row.memo }}</span>
           </button>
@@ -970,18 +1142,16 @@ function deleteFromSheet(): void {
     </div>
   </section>
 
-  <!-- 追加/編集用のボトムシート -->
   <div v-if="sheetOpen" class="sheet-overlay" @click.self="closeSheet">
     <div class="sheet-panel" role="dialog" aria-modal="true">
       <div class="sheet-header">
         <h2>{{ sheetMode === 'create' ? '家計簿を追加' : '家計簿を編集' }}</h2>
         <button type="button" class="sheet-close" aria-label="閉じる" @click="closeSheet">×</button>
       </div>
-
       <div class="sheet-body">
-        <label class="card-field">
-          <span>日付</span>
-          <input
+        <label class="card-field"
+          ><span>日付</span
+          ><input
             v-model="draft.date"
             type="date"
             required
@@ -989,43 +1159,37 @@ function deleteFromSheet(): void {
             :max="monthEndDate"
             :class="{ 'cell-error': !!draftErrors.date }"
             @input="clearDraftError('date')"
-          />
-          <small v-if="draftErrors.date" class="field-error">{{ draftErrors.date }}</small>
-        </label>
-
-        <label class="card-field">
-          <span>種別</span>
-          <select
+          /><small v-if="draftErrors.date" class="field-error">{{ draftErrors.date }}</small></label
+        >
+        <label class="card-field"
+          ><span>種別</span
+          ><select
             v-model="draft.type"
             :class="{ 'cell-error': !!draftErrors.type }"
             @change="changeDraftType"
           >
             <option value="EXPENSE">支出</option>
             <option value="INCOME">収入</option>
-            <option value="TRANSFER">振替</option>
-          </select>
-          <small v-if="draftErrors.type" class="field-error">{{ draftErrors.type }}</small>
-        </label>
-
-        <label class="card-field">
-          <span>{{ draft.type === 'TRANSFER' ? '振替元' : 'カテゴリ' }}</span>
-          <select
+            <option value="TRANSFER">振替</option></select
+          ><small v-if="draftErrors.type" class="field-error">{{ draftErrors.type }}</small></label
+        >
+        <label class="card-field"
+          ><span>{{ draft.type === 'TRANSFER' ? '振替元' : 'カテゴリ' }}</span
+          ><select
             v-model="draft.categoryId"
             :class="{ 'cell-error': !!draftErrors.categoryId }"
             @change="clearDraftError('categoryId')"
           >
             <option v-for="option in categoryOptions(draft)" :key="option.id" :value="option.id">
               {{ option.name }}
-            </option>
-          </select>
-          <small v-if="draftErrors.categoryId" class="field-error">
-            {{ draftErrors.categoryId }}
-          </small>
-        </label>
-
-        <label class="card-field">
-          <span>{{ draft.type === 'TRANSFER' ? '振替先' : '支払い方法' }}</span>
-          <select
+            </option></select
+          ><small v-if="draftErrors.categoryId" class="field-error">{{
+            draftErrors.categoryId
+          }}</small></label
+        >
+        <label class="card-field"
+          ><span>{{ draft.type === 'TRANSFER' ? '振替先' : '支払い方法' }}</span
+          ><select
             v-model="draft.paymentMethodId"
             :class="{ 'cell-error': !!draftErrors.paymentMethodId }"
             @change="clearDraftError('paymentMethodId')"
@@ -1036,52 +1200,51 @@ function deleteFromSheet(): void {
               :value="option.id"
             >
               {{ option.name }}
-            </option>
-          </select>
-          <small v-if="draftErrors.paymentMethodId" class="field-error">
-            {{ draftErrors.paymentMethodId }}
-          </small>
-        </label>
-
-        <label class="card-field">
-          <span>金額</span>
-          <input
+            </option></select
+          ><small v-if="draftErrors.paymentMethodId" class="field-error">{{
+            draftErrors.paymentMethodId
+          }}</small></label
+        >
+        <label class="card-field"
+          ><span>金額</span
+          ><input
             v-model.number="draft.amount"
             type="number"
             min="1"
             inputmode="numeric"
             :class="{ 'cell-error': !!draftErrors.amount }"
             @input="clearDraftError('amount')"
-          />
-          <small v-if="draftErrors.amount" class="field-error">{{ draftErrors.amount }}</small>
-        </label>
-
-        <label class="card-field">
-          <span>メモ</span>
-          <textarea
+          /><small v-if="draftErrors.amount" class="field-error">{{
+            draftErrors.amount
+          }}</small></label
+        >
+        <label class="card-field"
+          ><span>メモ</span
+          ><textarea
             v-model="draft.memo"
             class="memo-textarea"
             maxlength="500"
             wrap="soft"
             :class="{ 'cell-error': !!draftErrors.memo }"
             @input="clearDraftError('memo')"
-          />
-          <small v-if="draftErrors.memo" class="field-error">{{ draftErrors.memo }}</small>
-        </label>
+          /><small v-if="draftErrors.memo" class="field-error">{{ draftErrors.memo }}</small></label
+        >
       </div>
-
       <div class="sheet-actions">
         <button
           v-if="sheetMode === 'edit'"
           type="button"
           class="danger-button"
+          :disabled="saving"
           @click="deleteFromSheet"
         >
-          削除
+          削除</button
+        ><span class="sheet-actions-spacer"></span
+        ><button type="button" class="secondary-button" :disabled="saving" @click="closeSheet">
+          キャンセル</button
+        ><button type="button" :disabled="saving" @click="submitSheet">
+          {{ sheetMode === 'create' ? '登録' : '更新' }}
         </button>
-        <span class="sheet-actions-spacer"></span>
-        <button type="button" class="secondary-button" @click="closeSheet">キャンセル</button>
-        <button type="button" @click="submitSheet">保存</button>
       </div>
     </div>
   </div>

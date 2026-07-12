@@ -62,6 +62,15 @@ export type TransactionMonthlySaveRequest = {
   displayOrder: number
 }
 
+export type TransactionSaveRequest = {
+  date: string | null
+  type: TransactionType
+  categoryId: number | null
+  paymentMethodId: number | null
+  amount: number | null
+  memo: string | null
+}
+
 export type MonthlySummary = {
   year: number
   month: number
@@ -287,6 +296,35 @@ export function deleteTransferAccount(id: number): Promise<void> {
 
 export function getTransactions(year: number, month: number): Promise<Transaction[]> {
   return apiRequest<Transaction[]>(`/api/transactions?year=${year}&month=${month}`)
+}
+
+export function createTransaction(
+  year: number,
+  month: number,
+  request: TransactionSaveRequest,
+): Promise<Transaction> {
+  return apiRequest<Transaction>(`/api/transactions?year=${year}&month=${month}`, {
+    method: 'POST',
+    body: request,
+  })
+}
+
+export function updateTransaction(
+  id: number,
+  year: number,
+  month: number,
+  request: TransactionSaveRequest,
+): Promise<Transaction> {
+  return apiRequest<Transaction>(`/api/transactions/${id}?year=${year}&month=${month}`, {
+    method: 'PUT',
+    body: request,
+  })
+}
+
+export function deleteTransaction(id: number, year: number, month: number): Promise<void> {
+  return apiRequest<void>(`/api/transactions/${id}?year=${year}&month=${month}`, {
+    method: 'DELETE',
+  })
 }
 
 export function exportTransactions(startDate?: string, endDate?: string): Promise<Blob | null> {
