@@ -174,6 +174,7 @@ async function loadMonth(): Promise<void> {
     paymentMethods.value = [...paymentMethodItems].sort(compareByDisplayOrder)
     transferAccounts.value = [...transferAccountItems].sort(compareByDisplayOrder)
     rows.value = transactionItems.map(toRow)
+    sortRowsByDate()
     ensureTrailingBlankRow()
     persistedSummary.value = monthlySummary
     savedSnapshot.value = currentSnapshot()
@@ -198,6 +199,8 @@ async function autoSaveMonth(): Promise<void> {
     return
   }
 
+  // 保存の直前に日付順へ整える(入力停止後の自然な区切りで並び替える)。
+  sortRowsByDate()
   const entries = buildSaveEntries(rows.value)
   saveError.value = null
   clearRowErrors()
@@ -473,6 +476,22 @@ function clearRowErrors(): void {
 
 function clearRowError(row: TransactionRow): void {
   delete rowErrors[row.localKey]
+}
+
+// PC表示(テーブル)は日付の古い順(上→下)。空の新規行は末尾に残し、同日は元の順序を保つ(安定ソート)。
+// 表示・Tab移動・保存順を一致させるため配列そのものを並べ替える。入力中は動かさず、読込時と保存時にだけ適用する。
+function sortRowsByDate(): void {
+  rows.value = [...rows.value].sort((left, right) => {
+    const leftBlank = isBlankNewRow(left)
+    const rightBlank = isBlankNewRow(right)
+    if (leftBlank !== rightBlank) {
+      return leftBlank ? 1 : -1
+    }
+    if (leftBlank || left.date === right.date) {
+      return 0
+    }
+    return left.date < right.date ? -1 : 1
+  })
 }
 
 function ensureTrailingBlankRow(): void {
