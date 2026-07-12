@@ -789,7 +789,7 @@ async function deleteFromSheet(): Promise<void> {
       振替元・振替先が未登録です。先に振替管理画面で登録してください。
     </p>
 
-    <div class="table-wrap">
+    <div class="table-wrap transaction-table-wrap">
       <table class="transaction-table">
         <thead>
           <tr>

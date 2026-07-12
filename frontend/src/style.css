@@ -885,9 +885,10 @@ textarea:focus {
   flex: 1;
 }
 
-/* 表と明細リストの切り替え。テーブルは約1100px必要なため、狭幅では明細+シートに寄せる。 */
+/* 家計簿入力の表と明細リストの切り替え。7列で約1100px必要なため、狭幅では明細+シートに寄せる。
+   マスタ管理画面(.table-wrap)は列が少なく横スクロールで収まるため、対象は家計簿入力の表のみに限定する。 */
 @media (max-width: 768px) {
-  .table-wrap {
+  .transaction-table-wrap {
     display: none;
   }
 
