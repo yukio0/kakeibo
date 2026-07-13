@@ -82,8 +82,13 @@ async function sendRequest(path: string, options: RequestOptions): Promise<Respo
   }
 
   if (body !== undefined) {
-    headers.set('Content-Type', jsonContentType)
-    init.body = JSON.stringify(body)
+    if (body instanceof FormData) {
+      // multipart のバウンダリはブラウザに設定させるため Content-Type は付けない。
+      init.body = body
+    } else {
+      headers.set('Content-Type', jsonContentType)
+      init.body = JSON.stringify(body)
+    }
   }
 
   if (isUnsafeMethod(method) && path !== csrfPath) {

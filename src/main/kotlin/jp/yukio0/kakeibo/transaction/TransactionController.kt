@@ -16,10 +16,14 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.multipart.MultipartFile
 
 @RestController
 @RequestMapping("/api/transactions")
-class TransactionController(private val transactionService: TransactionService) {
+class TransactionController(
+  private val transactionService: TransactionService,
+  private val transactionImportService: TransactionImportService,
+) {
 
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
@@ -77,4 +81,10 @@ class TransactionController(private val transactionService: TransactionService) 
     @RequestParam(required = false) month: Int?,
     @RequestBody requests: List<TransactionMonthlySaveRequest>,
   ): List<TransactionResponse> = transactionService.saveMonthly(year, month, requests)
+
+  @PostMapping("/import")
+  fun import(
+    @RequestParam("file") file: MultipartFile,
+    @RequestParam(defaultValue = "false") commit: Boolean,
+  ): TransactionImportResult = transactionImportService.import(file.bytes, commit)
 }

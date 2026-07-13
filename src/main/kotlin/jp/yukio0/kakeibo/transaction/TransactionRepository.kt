@@ -28,6 +28,11 @@ interface TransactionRepository : JpaRepository<TransactionEntity, Long> {
     endDate: LocalDate,
   ): List<TransactionEntity>
 
+  fun countByTransactionDateGreaterThanEqualAndTransactionDateLessThan(
+    startDate: LocalDate,
+    endDateExclusive: LocalDate,
+  ): Long
+
   fun existsByCategoryId(categoryId: Long): Boolean
 
   fun existsByPaymentMethodId(paymentMethodId: Long): Boolean

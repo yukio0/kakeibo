@@ -344,6 +344,37 @@ export function deleteTransaction(id: number, year: number, month: number): Prom
   })
 }
 
+export type TransactionImportMonth = {
+  year: number
+  month: number
+  replacedCount: number
+  importedCount: number
+}
+
+export type TransactionImportError = {
+  row: number
+  message: string
+}
+
+export type TransactionImportResult = {
+  committed: boolean
+  totalRows: number
+  months: TransactionImportMonth[]
+  errors: TransactionImportError[]
+}
+
+export function importTransactions(file: File, commit: boolean): Promise<TransactionImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('commit', String(commit))
+
+  return apiRequest<TransactionImportResult>('/api/transactions/import', {
+    method: 'POST',
+    body: form,
+    fallbackMessage: 'CSVの取り込みに失敗しました',
+  })
+}
+
 export function exportTransactions(startDate?: string, endDate?: string): Promise<Blob | null> {
   const searchParams = new URLSearchParams()
   if (startDate) {
