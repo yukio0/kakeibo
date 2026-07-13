@@ -389,7 +389,5 @@ export function getMonthlyTrend(
   month: number,
   months: number,
 ): Promise<MonthlyTrend> {
-  return apiRequest<MonthlyTrend>(
-    `/api/summary/trend?year=${year}&month=${month}&months=${months}`,
-  )
+  return apiRequest<MonthlyTrend>(`/api/summary/trend?year=${year}&month=${month}&months=${months}`)
 }

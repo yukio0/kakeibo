@@ -299,10 +299,7 @@ class MonthlySummaryApiTests {
 
     mockMvc
       .perform(
-        get("/api/summary/trend")
-          .param("year", "2028")
-          .param("month", "3")
-          .param("months", "3")
+        get("/api/summary/trend").param("year", "2028").param("month", "3").param("months", "3")
       )
       .andExpect(status().isOk)
       .andExpect(content().contentType(MediaType.APPLICATION_JSON))

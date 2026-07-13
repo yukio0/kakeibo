@@ -40,7 +40,11 @@ const layout = computed(() => {
       key: `${month.year}-${month.month}`,
       label: `${month.month}月`,
       center,
-      income: { x: center - BAR_GAP / 2 - BAR_WIDTH, y: incomeY, height: Math.max(zeroY - incomeY, 0) },
+      income: {
+        x: center - BAR_GAP / 2 - BAR_WIDTH,
+        y: incomeY,
+        height: Math.max(zeroY - incomeY, 0),
+      },
       expense: { x: center + BAR_GAP / 2, y: expenseY, height: Math.max(zeroY - expenseY, 0) },
       balanceY: scaleY(month.balance),
     }
