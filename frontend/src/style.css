@@ -1017,6 +1017,91 @@ textarea:focus {
   border-radius: 0.25rem;
 }
 
+/* 月次推移グラフ(棒: 収入/支出, 折れ線: 差額) */
+.trend-chart-wrap {
+  margin-bottom: 1rem;
+}
+
+.trend-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.trend-baseline {
+  stroke: #c3c2b7;
+  stroke-width: 0.75;
+}
+
+.trend-bar-income {
+  fill: #16a34a;
+}
+
+.trend-bar-expense {
+  fill: #ef4444;
+}
+
+.trend-line-balance {
+  stroke: #2563eb;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.trend-dot-balance {
+  fill: #2563eb;
+}
+
+.trend-x-label {
+  fill: #6b7280;
+  font-size: 7px;
+  text-anchor: middle;
+}
+
+.trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+.trend-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.trend-swatch-income {
+  background: #16a34a;
+}
+
+.trend-swatch-expense {
+  background: #ef4444;
+}
+
+.trend-swatch-line {
+  display: inline-block;
+  width: 0.95rem;
+  height: 0;
+  flex: none;
+  border-top: 3px solid #2563eb;
+  border-radius: 2px;
+}
+
+.trend-table .numeric-cell {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.trend-negative {
+  color: #dc2626;
+}
+
 @media (max-width: 768px) {
   .summary-layout {
     grid-template-columns: 1fr;

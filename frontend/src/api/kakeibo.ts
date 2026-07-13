@@ -92,6 +92,10 @@ export type CategoryExpenseSummary = {
   categories: CategoryExpense[]
 }
 
+export type MonthlyTrend = {
+  months: MonthlySummary[]
+}
+
 export type AuthUser = {
   username: string
   twoFactorEnabled: boolean
@@ -377,5 +381,15 @@ export function getMonthlyCategoryExpenses(
 ): Promise<CategoryExpenseSummary> {
   return apiRequest<CategoryExpenseSummary>(
     `/api/summary/monthly/categories?year=${year}&month=${month}`,
+  )
+}
+
+export function getMonthlyTrend(
+  year: number,
+  month: number,
+  months: number,
+): Promise<MonthlyTrend> {
+  return apiRequest<MonthlyTrend>(
+    `/api/summary/trend?year=${year}&month=${month}&months=${months}`,
   )
 }

@@ -8,6 +8,10 @@ data class MonthlySummaryResponse(
   val balance: Long,
 )
 
+data class MonthlyTrendResponse(
+  val months: List<MonthlySummaryResponse>,
+)
+
 data class CategoryExpenseSummaryResponse(
   val year: Int,
   val month: Int,

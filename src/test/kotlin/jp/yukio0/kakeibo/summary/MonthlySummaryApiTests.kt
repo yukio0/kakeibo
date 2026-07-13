@@ -273,6 +273,73 @@ class MonthlySummaryApiTests {
       .andExpect(jsonPath("$.message").value("年月が不正です"))
   }
 
+  @Test
+  fun trendReturnsRequestedMonthsEndingAtAnchorInChronologicalOrder() {
+    val expenseCategory = saveCategory("推移API支出カテゴリ", TransactionType.EXPENSE)
+    val incomeCategory = saveCategory("推移API収入カテゴリ", TransactionType.INCOME)
+    saveTransaction(
+      category = expenseCategory,
+      type = TransactionType.EXPENSE,
+      amount = 10_000,
+      transactionDate = LocalDate.of(2028, 1, 10),
+    )
+    // 2028-02 はデータなし(ゼロ埋めされることを確認する)
+    saveTransaction(
+      category = incomeCategory,
+      type = TransactionType.INCOME,
+      amount = 50_000,
+      transactionDate = LocalDate.of(2028, 3, 5),
+    )
+    saveTransaction(
+      category = expenseCategory,
+      type = TransactionType.EXPENSE,
+      amount = 20_000,
+      transactionDate = LocalDate.of(2028, 3, 20),
+    )
+
+    mockMvc
+      .perform(
+        get("/api/summary/trend")
+          .param("year", "2028")
+          .param("month", "3")
+          .param("months", "3")
+      )
+      .andExpect(status().isOk)
+      .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+      .andExpect(jsonPath("$.months.length()").value(3))
+      .andExpect(jsonPath("$.months[0].year").value(2028))
+      .andExpect(jsonPath("$.months[0].month").value(1))
+      .andExpect(jsonPath("$.months[0].expenseTotal").value(10_000))
+      .andExpect(jsonPath("$.months[0].balance").value(-10_000))
+      .andExpect(jsonPath("$.months[1].month").value(2))
+      .andExpect(jsonPath("$.months[1].incomeTotal").value(0))
+      .andExpect(jsonPath("$.months[1].expenseTotal").value(0))
+      .andExpect(jsonPath("$.months[2].month").value(3))
+      .andExpect(jsonPath("$.months[2].incomeTotal").value(50_000))
+      .andExpect(jsonPath("$.months[2].expenseTotal").value(20_000))
+      .andExpect(jsonPath("$.months[2].balance").value(30_000))
+  }
+
+  @Test
+  fun trendDefaultsToSixMonthsEndingAtAnchor() {
+    mockMvc
+      .perform(get("/api/summary/trend").param("year", "2028").param("month", "3"))
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$.months.length()").value(6))
+      .andExpect(jsonPath("$.months[0].year").value(2027))
+      .andExpect(jsonPath("$.months[0].month").value(10))
+      .andExpect(jsonPath("$.months[5].year").value(2028))
+      .andExpect(jsonPath("$.months[5].month").value(3))
+  }
+
+  @Test
+  fun trendRejectsInvalidYearMonth() {
+    mockMvc
+      .perform(get("/api/summary/trend").param("year", "2028").param("month", "0"))
+      .andExpect(status().isBadRequest)
+      .andExpect(jsonPath("$.message").value("年月が不正です"))
+  }
+
   private fun saveCategory(name: String, type: TransactionType): CategoryEntity =
     categoryRepository.saveAndFlush(
       CategoryEntity(

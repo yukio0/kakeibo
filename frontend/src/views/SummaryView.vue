@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { toMessage } from '@/api/http'
-import { getMonthlyCategoryExpenses, type CategoryExpenseSummary } from '@/api/kakeibo'
+import {
+  getMonthlyCategoryExpenses,
+  getMonthlyTrend,
+  type CategoryExpenseSummary,
+  type MonthlySummary,
+} from '@/api/kakeibo'
 import { pad2 } from '@/transactions/dates'
 import DonutChart from '@/summary/DonutChart.vue'
+import TrendChart from '@/summary/TrendChart.vue'
 import type { DonutSegment } from '@/summary/donut'
+
+const TREND_MONTHS = 6
 
 // 検証済みカテゴリパレット(dataviz)。8スロットを固定順で使い、超過分は「その他」に集約する。
 const CATEGORY_PALETTE = [
@@ -27,6 +35,7 @@ const period = reactive({
 })
 
 const summary = ref<CategoryExpenseSummary | null>(null)
+const trend = ref<MonthlySummary[]>([])
 const loading = ref(true)
 const loadError = ref<string | null>(null)
 
@@ -70,6 +79,9 @@ const rows = computed<LegendRow[]>(() => {
 })
 
 const hasData = computed(() => rows.value.length > 0)
+const hasTrendData = computed(() =>
+  trend.value.some((month) => month.incomeTotal > 0 || month.expenseTotal > 0),
+)
 
 onMounted(() => {
   void loadSummary()
@@ -79,9 +91,15 @@ async function loadSummary(): Promise<void> {
   loading.value = true
   loadError.value = null
   try {
-    summary.value = await getMonthlyCategoryExpenses(period.year, period.month)
+    const [categorySummary, trendSummary] = await Promise.all([
+      getMonthlyCategoryExpenses(period.year, period.month),
+      getMonthlyTrend(period.year, period.month, TREND_MONTHS),
+    ])
+    summary.value = categorySummary
+    trend.value = trendSummary.months
   } catch (error) {
     summary.value = null
+    trend.value = []
     loadError.value = toMessage(error)
   } finally {
     loading.value = false
@@ -191,6 +209,53 @@ function formatPercent(value: number): string {
               </td>
               <td class="numeric-cell">{{ formatCurrency(row.value) }}</td>
               <td class="numeric-cell">{{ formatPercent(row.percent) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="category-section">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">推移</p>
+        <h2>直近{{ TREND_MONTHS }}か月の収支推移</h2>
+      </div>
+    </div>
+
+    <p v-if="loading" class="empty-cell">読み込み中...</p>
+    <p v-else-if="!hasTrendData" class="empty-cell">表示できる推移データがありません。</p>
+
+    <div v-else>
+      <ul class="trend-legend">
+        <li><span class="legend-swatch trend-swatch-income" aria-hidden="true" />収入</li>
+        <li><span class="legend-swatch trend-swatch-expense" aria-hidden="true" />支出</li>
+        <li><span class="trend-swatch-line" aria-hidden="true" />差額</li>
+      </ul>
+
+      <div class="trend-chart-wrap">
+        <TrendChart :months="trend" />
+      </div>
+
+      <div class="table-wrap trend-table-wrap">
+        <table class="category-table trend-table">
+          <thead>
+            <tr>
+              <th scope="col">月</th>
+              <th scope="col" class="numeric-cell">収入</th>
+              <th scope="col" class="numeric-cell">支出</th>
+              <th scope="col" class="numeric-cell">差額</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="month in trend" :key="`${month.year}-${month.month}`">
+              <td>{{ month.year }}年{{ month.month }}月</td>
+              <td class="numeric-cell">{{ formatCurrency(month.incomeTotal) }}</td>
+              <td class="numeric-cell">{{ formatCurrency(month.expenseTotal) }}</td>
+              <td class="numeric-cell" :class="{ 'trend-negative': month.balance < 0 }">
+                {{ formatCurrency(month.balance) }}
+              </td>
             </tr>
           </tbody>
         </table>
