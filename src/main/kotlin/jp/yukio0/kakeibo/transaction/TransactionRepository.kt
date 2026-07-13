@@ -50,4 +50,21 @@ interface TransactionRepository : JpaRepository<TransactionEntity, Long> {
     @Param("startDate") startDate: LocalDate,
     @Param("endDateExclusive") endDateExclusive: LocalDate,
   ): List<TransactionTypeTotal>
+
+  @Query(
+    """
+    SELECT new jp.yukio0.kakeibo.transaction.CategoryExpenseTotal(c.id, c.name, SUM(t.amount))
+    FROM TransactionEntity t
+      JOIN t.category c
+    WHERE t.transactionDate >= :startDate
+      AND t.transactionDate < :endDateExclusive
+      AND t.type = jp.yukio0.kakeibo.domain.TransactionType.EXPENSE
+    GROUP BY c.id, c.name
+    ORDER BY SUM(t.amount) DESC, c.id ASC
+    """
+  )
+  fun sumExpenseAmountsByCategoryForPeriod(
+    @Param("startDate") startDate: LocalDate,
+    @Param("endDateExclusive") endDateExclusive: LocalDate,
+  ): List<CategoryExpenseTotal>
 }

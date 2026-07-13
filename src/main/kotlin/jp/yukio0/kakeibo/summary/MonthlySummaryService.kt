@@ -30,4 +30,23 @@ class MonthlySummaryService(private val transactionRepository: TransactionReposi
       balance = incomeTotal - expenseTotal,
     )
   }
+
+  @Transactional(readOnly = true)
+  fun getMonthlyCategoryExpenses(year: Int?, month: Int?): CategoryExpenseSummaryResponse {
+    val monthlyPeriod = MonthlyPeriod.from(year, month)
+    val items =
+      transactionRepository
+        .sumExpenseAmountsByCategoryForPeriod(
+          monthlyPeriod.startDate,
+          monthlyPeriod.endDateExclusive,
+        )
+        .map { CategoryExpenseItem(it.categoryId, it.categoryName, it.total) }
+
+    return CategoryExpenseSummaryResponse(
+      year = monthlyPeriod.year,
+      month = monthlyPeriod.month,
+      expenseTotal = items.sumOf { it.total },
+      categories = items,
+    )
+  }
 }

@@ -79,6 +79,19 @@ export type MonthlySummary = {
   balance: number
 }
 
+export type CategoryExpense = {
+  categoryId: number
+  categoryName: string
+  total: number
+}
+
+export type CategoryExpenseSummary = {
+  year: number
+  month: number
+  expenseTotal: number
+  categories: CategoryExpense[]
+}
+
 export type AuthUser = {
   username: string
   twoFactorEnabled: boolean
@@ -356,4 +369,13 @@ export function saveMonthlyTransactions(
 
 export function getMonthlySummary(year: number, month: number): Promise<MonthlySummary> {
   return apiRequest<MonthlySummary>(`/api/summary/monthly?year=${year}&month=${month}`)
+}
+
+export function getMonthlyCategoryExpenses(
+  year: number,
+  month: number,
+): Promise<CategoryExpenseSummary> {
+  return apiRequest<CategoryExpenseSummary>(
+    `/api/summary/monthly/categories?year=${year}&month=${month}`,
+  )
 }

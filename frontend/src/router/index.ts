@@ -8,6 +8,7 @@ import MfaVerifyView from '@/views/MfaVerifyView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
 import PasswordChangeView from '@/views/PasswordChangeView.vue'
 import PaymentMethodView from '@/views/PaymentMethodView.vue'
+import SummaryView from '@/views/SummaryView.vue'
 import TransferAccountView from '@/views/TransferAccountView.vue'
 import TransactionView from '@/views/TransactionView.vue'
 import TrustedDevicesView from '@/views/TrustedDevicesView.vue'
@@ -40,6 +41,11 @@ export const router = createRouter({
       path: '/categories',
       name: 'categories',
       component: CategoryView,
+    },
+    {
+      path: '/summary',
+      name: 'summary',
+      component: SummaryView,
     },
     {
       path: '/csv-export',

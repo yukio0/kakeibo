@@ -181,6 +181,98 @@ class MonthlySummaryApiTests {
       .andExpect(jsonPath("$.message").value("リクエストの形式が不正です"))
   }
 
+  @Test
+  fun categoryExpensesReturnPerCategoryTotalsSortedByAmountDesc() {
+    val foodCategory = saveCategory("集計API食費カテゴリ", TransactionType.EXPENSE)
+    val hobbyCategory = saveCategory("集計API娯楽カテゴリ", TransactionType.EXPENSE)
+    saveTransaction(
+      category = foodCategory,
+      type = TransactionType.EXPENSE,
+      amount = 3_000,
+      transactionDate = LocalDate.of(2027, 1, 5),
+    )
+    saveTransaction(
+      category = foodCategory,
+      type = TransactionType.EXPENSE,
+      amount = 5_000,
+      transactionDate = LocalDate.of(2027, 1, 20),
+    )
+    saveTransaction(
+      category = hobbyCategory,
+      type = TransactionType.EXPENSE,
+      amount = 20_000,
+      transactionDate = LocalDate.of(2027, 1, 10),
+    )
+
+    mockMvc
+      .perform(get("/api/summary/monthly/categories").param("year", "2027").param("month", "1"))
+      .andExpect(status().isOk)
+      .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+      .andExpect(jsonPath("$.year").value(2027))
+      .andExpect(jsonPath("$.month").value(1))
+      .andExpect(jsonPath("$.expenseTotal").value(28_000))
+      .andExpect(jsonPath("$.categories.length()").value(2))
+      .andExpect(jsonPath("$.categories[0].categoryName").value("集計API娯楽カテゴリ"))
+      .andExpect(jsonPath("$.categories[0].total").value(20_000))
+      .andExpect(jsonPath("$.categories[1].categoryName").value("集計API食費カテゴリ"))
+      .andExpect(jsonPath("$.categories[1].total").value(8_000))
+  }
+
+  @Test
+  fun categoryExpensesExcludeIncomeTransferAndOtherMonths() {
+    val expenseCategory = saveCategory("集計API除外支出カテゴリ", TransactionType.EXPENSE)
+    val incomeCategory = saveCategory("集計API除外収入カテゴリ", TransactionType.INCOME)
+    saveTransaction(
+      category = expenseCategory,
+      type = TransactionType.EXPENSE,
+      amount = 7_000,
+      transactionDate = LocalDate.of(2027, 2, 15),
+    )
+    saveTransaction(
+      category = incomeCategory,
+      type = TransactionType.INCOME,
+      amount = 400_000,
+      transactionDate = LocalDate.of(2027, 2, 15),
+    )
+    saveTransferTransaction(
+      amount = 100_000,
+      transactionDate = LocalDate.of(2027, 2, 16),
+    )
+    saveTransaction(
+      category = expenseCategory,
+      type = TransactionType.EXPENSE,
+      amount = 9_999,
+      transactionDate = LocalDate.of(2027, 3, 1),
+    )
+
+    mockMvc
+      .perform(get("/api/summary/monthly/categories").param("year", "2027").param("month", "2"))
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$.expenseTotal").value(7_000))
+      .andExpect(jsonPath("$.categories.length()").value(1))
+      .andExpect(jsonPath("$.categories[0].categoryName").value("集計API除外支出カテゴリ"))
+      .andExpect(jsonPath("$.categories[0].total").value(7_000))
+  }
+
+  @Test
+  fun categoryExpensesReturnEmptyWhenNoData() {
+    mockMvc
+      .perform(get("/api/summary/monthly/categories").param("year", "2099").param("month", "11"))
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$.year").value(2099))
+      .andExpect(jsonPath("$.month").value(11))
+      .andExpect(jsonPath("$.expenseTotal").value(0))
+      .andExpect(jsonPath("$.categories.length()").value(0))
+  }
+
+  @Test
+  fun categoryExpensesRejectInvalidYearMonth() {
+    mockMvc
+      .perform(get("/api/summary/monthly/categories").param("year", "2027").param("month", "13"))
+      .andExpect(status().isBadRequest)
+      .andExpect(jsonPath("$.message").value("年月が不正です"))
+  }
+
   private fun saveCategory(name: String, type: TransactionType): CategoryEntity =
     categoryRepository.saveAndFlush(
       CategoryEntity(

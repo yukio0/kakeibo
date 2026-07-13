@@ -74,6 +74,7 @@ class SecurityConfig(
             "/mfa/verify",
             "/categories",
             "/csv-export",
+            "/summary",
             "/mfa/settings",
             "/payment-methods",
             "/password",

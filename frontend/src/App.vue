@@ -17,6 +17,7 @@ async function handleLogout(): Promise<void> {
       <div v-if="authState.user" class="app-header-actions">
         <nav class="app-nav" aria-label="メインナビゲーション">
           <RouterLink to="/">家計簿入力</RouterLink>
+          <RouterLink to="/summary">集計</RouterLink>
           <RouterLink to="/csv-export">CSV出力</RouterLink>
           <RouterLink to="/categories">カテゴリ管理</RouterLink>
           <RouterLink to="/payment-methods">支払い方法管理</RouterLink>
