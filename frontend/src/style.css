@@ -1131,6 +1131,17 @@ textarea:focus {
   margin: 0 auto;
 }
 
+.trend-gridline {
+  stroke: #e5e7eb;
+  stroke-width: 0.5;
+}
+
+.trend-y-label {
+  fill: #9ca3af;
+  font-size: 6.5px;
+  text-anchor: end;
+}
+
 .trend-baseline {
   stroke: #c3c2b7;
   stroke-width: 0.75;

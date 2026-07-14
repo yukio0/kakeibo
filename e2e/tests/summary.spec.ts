@@ -156,6 +156,10 @@ test('集計画面: 月次の収支推移グラフを表示する', async ({ pag
   await expect(page.locator('.trend-bar-expense')).toHaveCount(3)
   await expect(page.locator('.trend-line-balance')).toBeVisible()
 
+  // Y軸の目盛りラベル(万円表記)が複数描画される。
+  await expect(page.locator('.trend-y-label').filter({ hasText: '万' }).first()).toBeVisible()
+  expect(await page.locator('.trend-y-label').count()).toBeGreaterThan(1)
+
   const trendRows = page.locator('.trend-table tbody tr')
   await expect(trendRows).toHaveCount(3)
   // 末尾が当月。当月の支出150,000が表示される。

@@ -11,30 +11,62 @@ const props = defineProps<{
 const GROUP_WIDTH = 54
 const BAR_WIDTH = 20
 const BAR_GAP = 6
-const PAD_LEFT = 8
+const AXIS_WIDTH = 32 // 左のY軸目盛りラベル用の余白
 const PAD_RIGHT = 8
 const PAD_TOP = 10
 const PAD_BOTTOM = 18
 const PLOT_HEIGHT = 150
+const TARGET_TICKS = 4
+
+// 目盛り幅を 1・2・2.5・5・10 ×10ⁿ のきりのいい値に丸める。
+function niceStep(rough: number): number {
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rough)))
+  const normalized = rough / magnitude
+  const nice =
+    normalized < 1.5 ? 1 : normalized < 3 ? 2 : normalized < 4 ? 2.5 : normalized < 7 ? 5 : 10
+  return nice * magnitude
+}
+
+// 目盛りラベル。1万円以上は「◯万」、それ未満しかない場合は素の数値にフォールバックする。
+function formatTick(value: number, maxAbs: number): string {
+  if (value === 0) return '0'
+  if (maxAbs < 10000) return new Intl.NumberFormat('ja-JP').format(value)
+  const man = Math.round((value / 10000) * 10) / 10
+  return `${man}万`
+}
 
 const layout = computed(() => {
   const months = props.months
-  const width = PAD_LEFT + months.length * GROUP_WIDTH + PAD_RIGHT
+  const width = AXIS_WIDTH + months.length * GROUP_WIDTH + PAD_RIGHT
   const height = PAD_TOP + PLOT_HEIGHT + PAD_BOTTOM
   const plotBottom = PAD_TOP + PLOT_HEIGHT
+  const plotRight = width - PAD_RIGHT
 
-  // 収入・支出は非負。差額のみ負になり得るので下側の余白を確保する。
+  // 収入・支出は非負。差額のみ負になり得るので下側にも軸を伸ばす。
   const maxValue = Math.max(
     0,
     ...months.map((month) => Math.max(month.incomeTotal, month.expenseTotal, month.balance)),
   )
   const minValue = Math.min(0, ...months.map((month) => month.balance))
-  const range = maxValue - minValue || 1
-  const scaleY = (value: number) => plotBottom - ((value - minValue) / range) * PLOT_HEIGHT
+
+  // 目盛り幅を決め、スケールの上下端をきりのいい値に合わせる。
+  const step = niceStep((maxValue - minValue || 1) / TARGET_TICKS)
+  const domainMin = Math.floor(minValue / step) * step
+  const domainMax = Math.max(Math.ceil(maxValue / step) * step, domainMin + step)
+  const domainRange = domainMax - domainMin
+  const scaleY = (value: number) => plotBottom - ((value - domainMin) / domainRange) * PLOT_HEIGHT
   const zeroY = scaleY(0)
 
+  const maxAbs = Math.max(Math.abs(domainMin), Math.abs(domainMax))
+  const ticks: { key: number; y: number; label: string }[] = []
+  for (let value = domainMin; value <= domainMax + step / 2; value += step) {
+    // 浮動小数の誤差で -0 などが出るのを避ける。
+    const rounded = Math.round(value)
+    ticks.push({ key: rounded, y: scaleY(rounded), label: formatTick(rounded, maxAbs) })
+  }
+
   const bars = months.map((month, index) => {
-    const center = PAD_LEFT + index * GROUP_WIDTH + GROUP_WIDTH / 2
+    const center = AXIS_WIDTH + index * GROUP_WIDTH + GROUP_WIDTH / 2
     const incomeY = scaleY(month.incomeTotal)
     const expenseY = scaleY(month.expenseTotal)
     return {
@@ -55,6 +87,10 @@ const layout = computed(() => {
     width,
     height,
     zeroY,
+    plotLeft: AXIS_WIDTH,
+    plotRight,
+    labelX: AXIS_WIDTH - 5,
+    ticks,
     bars,
     barWidth: BAR_WIDTH,
     balancePoints: bars.map((bar) => `${bar.center},${bar.balanceY}`).join(' '),
@@ -71,10 +107,23 @@ const layout = computed(() => {
     role="img"
     aria-label="月次の収入・支出・差額の推移グラフ"
   >
+    <g class="trend-y-axis">
+      <template v-for="tick in layout.ticks" :key="tick.key">
+        <line
+          v-if="tick.key !== 0"
+          class="trend-gridline"
+          :x1="layout.plotLeft"
+          :x2="layout.plotRight"
+          :y1="tick.y"
+          :y2="tick.y"
+        />
+        <text class="trend-y-label" :x="layout.labelX" :y="tick.y + 2.5">{{ tick.label }}</text>
+      </template>
+    </g>
     <line
       class="trend-baseline"
-      :x1="PAD_LEFT"
-      :x2="layout.width - PAD_RIGHT"
+      :x1="layout.plotLeft"
+      :x2="layout.plotRight"
       :y1="layout.zeroY"
       :y2="layout.zeroY"
     />
