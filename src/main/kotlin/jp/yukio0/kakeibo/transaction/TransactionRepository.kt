@@ -33,6 +33,9 @@ interface TransactionRepository : JpaRepository<TransactionEntity, Long> {
     endDateExclusive: LocalDate,
   ): Long
 
+  @Query("SELECT MIN(t.transactionDate) FROM TransactionEntity t")
+  fun findEarliestTransactionDate(): LocalDate?
+
   fun existsByCategoryId(categoryId: Long): Boolean
 
   fun existsByPaymentMethodId(paymentMethodId: Long): Boolean

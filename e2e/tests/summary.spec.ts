@@ -151,17 +151,17 @@ test('集計画面: 月次の収支推移グラフを表示する', async ({ pag
 
   await page.getByRole('link', { name: '集計', exact: true }).click()
 
-  // 既定6か月分の棒(収入・支出)と差額の折れ線が描画される。
-  await expect(page.locator('.trend-bar-income')).toHaveCount(6)
-  await expect(page.locator('.trend-bar-expense')).toHaveCount(6)
+  // 最初に記録した月(2か月前)から当月までの3か月分の棒(収入・支出)と差額の折れ線が描画される。
+  await expect(page.locator('.trend-bar-income')).toHaveCount(3)
+  await expect(page.locator('.trend-bar-expense')).toHaveCount(3)
   await expect(page.locator('.trend-line-balance')).toBeVisible()
 
   const trendRows = page.locator('.trend-table tbody tr')
-  await expect(trendRows).toHaveCount(6)
+  await expect(trendRows).toHaveCount(3)
   // 末尾が当月。当月の支出150,000が表示される。
-  await expect(trendRows.nth(5)).toContainText('150,000')
-  // 2か月前(4行目)は差額がマイナスで、マイナス表示のセルになる。
-  await expect(trendRows.nth(3).locator('td.trend-negative')).toBeVisible()
+  await expect(trendRows.nth(2)).toContainText('150,000')
+  // 先頭が2か月前で、差額がマイナスのためマイナス表示のセルになる。
+  await expect(trendRows.nth(0).locator('td.trend-negative')).toBeVisible()
 
   await saveScreenshot(page, testInfo, 'summary-trend-chart')
 })

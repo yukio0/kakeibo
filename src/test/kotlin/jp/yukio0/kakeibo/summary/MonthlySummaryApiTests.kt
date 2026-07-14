@@ -318,15 +318,59 @@ class MonthlySummaryApiTests {
   }
 
   @Test
-  fun trendDefaultsToSixMonthsEndingAtAnchor() {
+  fun trendStartsFromFirstRecordedMonthWhenHistoryShorterThanCap() {
+    val expenseCategory = saveCategory("推移開始月カテゴリ", TransactionType.EXPENSE)
+    // 最初の記録は2028-01。対象月2028-03なら3か月(2028-01〜2028-03)だけを返す。
+    saveTransaction(
+      category = expenseCategory,
+      type = TransactionType.EXPENSE,
+      amount = 5_000,
+      transactionDate = LocalDate.of(2028, 1, 15),
+    )
+
     mockMvc
       .perform(get("/api/summary/trend").param("year", "2028").param("month", "3"))
       .andExpect(status().isOk)
-      .andExpect(jsonPath("$.months.length()").value(6))
+      .andExpect(jsonPath("$.months.length()").value(3))
+      .andExpect(jsonPath("$.months[0].year").value(2028))
+      .andExpect(jsonPath("$.months[0].month").value(1))
+      .andExpect(jsonPath("$.months[0].expenseTotal").value(5_000))
+      .andExpect(jsonPath("$.months[2].year").value(2028))
+      .andExpect(jsonPath("$.months[2].month").value(3))
+      .andExpect(jsonPath("$.months[2].expenseTotal").value(0))
+  }
+
+  @Test
+  fun trendCapsAtTwelveMonthsWhenHistoryIsLonger() {
+    val expenseCategory = saveCategory("推移上限カテゴリ", TransactionType.EXPENSE)
+    // 最初の記録が対象月の12か月より前(2026-01)でも、直近12か月に制限される。
+    saveTransaction(
+      category = expenseCategory,
+      type = TransactionType.EXPENSE,
+      amount = 3_000,
+      transactionDate = LocalDate.of(2026, 1, 10),
+    )
+
+    mockMvc
+      .perform(get("/api/summary/trend").param("year", "2028").param("month", "3"))
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$.months.length()").value(12))
       .andExpect(jsonPath("$.months[0].year").value(2027))
-      .andExpect(jsonPath("$.months[0].month").value(10))
-      .andExpect(jsonPath("$.months[5].year").value(2028))
-      .andExpect(jsonPath("$.months[5].month").value(3))
+      .andExpect(jsonPath("$.months[0].month").value(4))
+      .andExpect(jsonPath("$.months[11].year").value(2028))
+      .andExpect(jsonPath("$.months[11].month").value(3))
+  }
+
+  @Test
+  fun trendReturnsSingleMonthWhenNoRecordsExist() {
+    mockMvc
+      .perform(get("/api/summary/trend").param("year", "2028").param("month", "3"))
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$.months.length()").value(1))
+      .andExpect(jsonPath("$.months[0].year").value(2028))
+      .andExpect(jsonPath("$.months[0].month").value(3))
+      .andExpect(jsonPath("$.months[0].incomeTotal").value(0))
+      .andExpect(jsonPath("$.months[0].expenseTotal").value(0))
   }
 
   @Test

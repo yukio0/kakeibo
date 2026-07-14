@@ -12,7 +12,7 @@ import DonutChart from '@/summary/DonutChart.vue'
 import TrendChart from '@/summary/TrendChart.vue'
 import type { DonutSegment } from '@/summary/donut'
 
-const TREND_MONTHS = 6
+const TREND_MONTHS = 12
 
 // 検証済みカテゴリパレット(dataviz)。8スロットを固定順で使い、超過分は「その他」に集約する。
 const CATEGORY_PALETTE = [
@@ -77,6 +77,9 @@ const rows = computed<LegendRow[]>(() => {
 
   return segments
 })
+
+// 実際に返ってきた月数(最初に記録がある月〜対象月、最大 TREND_MONTHS か月)を見出しに使う。
+const trendMonthCount = computed(() => trend.value.length || TREND_MONTHS)
 
 const hasData = computed(() => rows.value.length > 0)
 const hasTrendData = computed(() =>
@@ -220,7 +223,7 @@ function formatPercent(value: number): string {
     <div class="section-heading">
       <div>
         <p class="eyebrow">推移</p>
-        <h2>直近{{ TREND_MONTHS }}か月の収支推移</h2>
+        <h2>直近{{ trendMonthCount }}か月の収支推移</h2>
       </div>
     </div>
 

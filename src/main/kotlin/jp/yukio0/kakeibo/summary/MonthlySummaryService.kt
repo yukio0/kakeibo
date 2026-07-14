@@ -1,6 +1,7 @@
 package jp.yukio0.kakeibo.summary
 
 import java.time.YearMonth
+import java.time.temporal.ChronoUnit
 import jp.yukio0.kakeibo.domain.TransactionType
 import jp.yukio0.kakeibo.transaction.MonthlyPeriod
 import jp.yukio0.kakeibo.transaction.TransactionRepository
@@ -32,12 +33,26 @@ class MonthlySummaryService(private val transactionRepository: TransactionReposi
     )
   }
 
-  /** アンカー月(year/month)を末尾に、直近 [months] か月分の月次サマリを古い順で返す。 */
+  /**
+   * アンカー月(year/month)を末尾に、最初に記録がある月からアンカー月までの月次サマリを古い順で返す。 対象は最大 [months]
+   * か月(既定/上限は直近12か月)で、途中でデータがない月は0円としてゼロ埋めする。
+   */
   @Transactional(readOnly = true)
   fun getMonthlyTrend(year: Int?, month: Int?, months: Int?): MonthlyTrendResponse {
     val anchor = MonthlyPeriod.from(year, month)
-    val count = (months ?: DEFAULT_TREND_MONTHS).coerceIn(1, MAX_TREND_MONTHS)
+    val maxCount = (months ?: DEFAULT_TREND_MONTHS).coerceIn(1, MAX_TREND_MONTHS)
     val anchorYearMonth = YearMonth.of(anchor.year, anchor.month)
+
+    val firstYearMonth =
+      transactionRepository.findEarliestTransactionDate()?.let { YearMonth.from(it) }
+    val count =
+      if (firstYearMonth == null || firstYearMonth.isAfter(anchorYearMonth)) {
+        1
+      } else {
+        (ChronoUnit.MONTHS.between(firstYearMonth, anchorYearMonth) + 1)
+          .coerceIn(1L, maxCount.toLong())
+          .toInt()
+      }
 
     val summaries =
       (count - 1 downTo 0).map { monthsBack ->
@@ -68,7 +83,7 @@ class MonthlySummaryService(private val transactionRepository: TransactionReposi
   }
 
   private companion object {
-    const val DEFAULT_TREND_MONTHS = 6
+    const val DEFAULT_TREND_MONTHS = 12
     const val MAX_TREND_MONTHS = 24
   }
 }
