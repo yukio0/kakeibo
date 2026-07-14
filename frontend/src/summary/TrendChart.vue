@@ -6,10 +6,11 @@ const props = defineProps<{
   months: MonthlySummary[]
 }>()
 
-// すべて viewBox 内のユーザー単位。SVG が横幅にあわせて拡縮する。
-const GROUP_WIDTH = 44
-const BAR_WIDTH = 15
-const BAR_GAP = 4
+// すべて viewBox 内のユーザー単位。1 単位 = 1px でレンダリングし、
+// コンテナ幅を超えるときだけ max-width で一様に縮小する(月数によらず棒の大きさは一定)。
+const GROUP_WIDTH = 54
+const BAR_WIDTH = 20
+const BAR_GAP = 6
 const PAD_LEFT = 8
 const PAD_RIGHT = 8
 const PAD_TOP = 10
@@ -65,6 +66,7 @@ const layout = computed(() => {
   <svg
     class="trend-chart"
     :viewBox="`0 0 ${layout.width} ${layout.height}`"
+    :style="{ width: `${layout.width}px` }"
     preserveAspectRatio="xMidYMid meet"
     role="img"
     aria-label="月次の収入・支出・差額の推移グラフ"

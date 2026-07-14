@@ -1125,8 +1125,10 @@ textarea:focus {
 
 .trend-chart {
   display: block;
-  width: 100%;
+  /* 固有幅(月数×1px)でレンダリングし、コンテナを超えるときだけ縮小して中央寄せ。 */
+  max-width: 100%;
   height: auto;
+  margin: 0 auto;
 }
 
 .trend-baseline {
