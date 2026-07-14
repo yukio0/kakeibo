@@ -11,6 +11,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
+import org.springframework.web.multipart.MaxUploadSizeExceededException
 import org.springframework.web.servlet.resource.NoResourceFoundException
 
 @RestControllerAdvice
@@ -80,6 +81,11 @@ class GlobalExceptionHandler {
     ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
       .header(HttpHeaders.RETRY_AFTER, exception.retryAfterSeconds.toString())
       .body(ApiErrorResponse(message = exception.message ?: "しばらくしてからお試しください"))
+
+  @ExceptionHandler(MaxUploadSizeExceededException::class)
+  fun handleMaxUploadSize(): ResponseEntity<ApiErrorResponse> =
+    ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+      .body(ApiErrorResponse(message = "ファイルサイズが大きすぎます"))
 
   @ExceptionHandler(Exception::class)
   fun handleUnexpectedException(exception: Exception): ResponseEntity<ApiErrorResponse> {

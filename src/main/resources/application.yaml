@@ -3,6 +3,11 @@ spring:
     name: kakeibo
   config:
     import: optional:file:.env[.properties]
+  servlet:
+    multipart:
+      # CSVインポートの上限。家計簿CSVは十分小さいので控えめに固定する。
+      max-file-size: 2MB
+      max-request-size: 2MB
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME}
     username: ${DB_USER}

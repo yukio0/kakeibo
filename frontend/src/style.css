@@ -95,6 +95,32 @@ button:disabled {
   gap: 1rem;
 }
 
+/* ハンバーガー・ドロワー関連は既定で非表示。狭幅(≤768px)でのみ有効化する。 */
+.nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  font-size: 1.5rem;
+  color: #1f2937;
+  background: transparent;
+  border-radius: 0.5rem;
+}
+
+.nav-toggle:hover {
+  background: #f1f5f9;
+}
+
+.nav-close {
+  display: none;
+}
+
+.nav-overlay {
+  display: none;
+}
+
 .app-nav a,
 .text-link {
   color: #2563eb;
@@ -897,21 +923,96 @@ textarea:focus {
   }
 }
 
-@media (max-width: 640px) {
-  .app-header {
-    align-items: flex-start;
-    flex-direction: column;
-    padding: 1rem;
+/* モバイルのグローバルナビ: ハンバーガー + 右スライドのドロワー */
+@media (max-width: 768px) {
+  .nav-toggle {
+    display: inline-flex;
   }
 
-  .app-header-actions,
-  .app-user-actions {
-    align-items: flex-start;
+  .nav-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(15, 23, 42, 0.4);
+  }
+
+  .app-header-actions {
+    position: fixed;
+    top: 0;
+    right: 0;
+    z-index: 50;
     flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    width: min(82vw, 320px);
+    height: 100dvh;
+    padding: 1rem;
+    background: #ffffff;
+    box-shadow: -8px 0 24px rgba(15, 23, 42, 0.15);
+    overflow-y: auto;
+    visibility: hidden;
+    transform: translateX(100%);
+    transition:
+      transform 0.2s ease,
+      visibility 0.2s ease;
+  }
+
+  .app-header-actions.open {
+    visibility: visible;
+    transform: translateX(0);
+  }
+
+  .nav-close {
+    display: inline-flex;
+    align-self: flex-end;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    font-size: 1.5rem;
+    color: #475569;
+    background: transparent;
+  }
+
+  .nav-close:hover {
+    background: #f1f5f9;
   }
 
   .app-nav {
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+  }
+
+  .app-nav a {
+    display: block;
+    padding: 0.85rem 0.75rem;
+    border-radius: 0.5rem;
+  }
+
+  .app-nav a:hover {
+    background: #f1f5f9;
+  }
+
+  .app-user-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .logout-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-header {
+    padding: 1rem;
   }
 
   .app-main {
