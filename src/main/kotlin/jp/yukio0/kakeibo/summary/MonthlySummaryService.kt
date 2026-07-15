@@ -33,6 +33,49 @@ class MonthlySummaryService(private val transactionRepository: TransactionReposi
     )
   }
 
+  /** 対象月の日別収支を返す。最初に記録された日が対象月内ならその日から、翌月以降なら月初から月末までを0円の日も含めて返す。 */
+  @Transactional(readOnly = true)
+  fun getMonthlyDailySummary(year: Int?, month: Int?): DailySummaryResponse {
+    val monthlyPeriod = MonthlyPeriod.from(year, month)
+    val firstTransactionDate = transactionRepository.findEarliestTransactionDate()
+    if (
+      firstTransactionDate == null || !firstTransactionDate.isBefore(monthlyPeriod.endDateExclusive)
+    ) {
+      return DailySummaryResponse(
+        year = monthlyPeriod.year,
+        month = monthlyPeriod.month,
+        days = emptyList(),
+      )
+    }
+
+    val startDate = maxOf(firstTransactionDate, monthlyPeriod.startDate)
+    val totalsByDate =
+      transactionRepository
+        .sumAmountsByDateAndTypeForPeriod(startDate, monthlyPeriod.endDateExclusive)
+        .groupBy { it.transactionDate }
+        .mapValues { (_, totals) -> totals.associate { it.type to it.total } }
+
+    val days =
+      generateSequence(startDate) { date ->
+          date.plusDays(1).takeIf { it.isBefore(monthlyPeriod.endDateExclusive) }
+        }
+        .map { date ->
+          val totalsByType = totalsByDate[date].orEmpty()
+          DailySummaryItem(
+            date = date,
+            incomeTotal = totalsByType[TransactionType.INCOME] ?: 0L,
+            expenseTotal = totalsByType[TransactionType.EXPENSE] ?: 0L,
+          )
+        }
+        .toList()
+
+    return DailySummaryResponse(
+      year = monthlyPeriod.year,
+      month = monthlyPeriod.month,
+      days = days,
+    )
+  }
+
   /**
    * アンカー月(year/month)を末尾に、最初に記録がある月からアンカー月までの月次サマリを古い順で返す。 対象は最大 [months]
    * か月(既定/上限は直近12か月)で、途中でデータがない月は0円としてゼロ埋めする。

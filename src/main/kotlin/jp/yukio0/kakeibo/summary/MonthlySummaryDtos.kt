@@ -1,5 +1,7 @@
 package jp.yukio0.kakeibo.summary
 
+import java.time.LocalDate
+
 data class MonthlySummaryResponse(
   val year: Int,
   val month: Int,
@@ -9,6 +11,18 @@ data class MonthlySummaryResponse(
 )
 
 data class MonthlyTrendResponse(val months: List<MonthlySummaryResponse>)
+
+data class DailySummaryResponse(
+  val year: Int,
+  val month: Int,
+  val days: List<DailySummaryItem>,
+)
+
+data class DailySummaryItem(
+  val date: LocalDate,
+  val incomeTotal: Long,
+  val expenseTotal: Long,
+)
 
 data class CategoryExpenseSummaryResponse(
   val year: Int,

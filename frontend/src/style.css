@@ -1216,6 +1216,29 @@ textarea:focus {
   color: #dc2626;
 }
 
+.daily-summary {
+  margin-top: 2rem;
+}
+
+.daily-summary-heading {
+  margin-bottom: 1rem;
+}
+
+.daily-summary-heading .eyebrow {
+  margin-bottom: 0.25rem;
+}
+
+.daily-summary-heading h3 {
+  margin: 0;
+  color: #111827;
+}
+
+.daily-table .numeric-cell {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 /* CSV取り込みのプレビュー・エラー表示 */
 .import-plan-table .numeric-cell {
   text-align: right;

@@ -164,6 +164,70 @@ class MonthlySummaryApiTests {
   }
 
   @Test
+  fun dailySummaryStartsAtFirstRecordedDateAndFillsDaysWithoutTransactions() {
+    val expenseCategory = saveCategory("日別集計開始日支出カテゴリ", TransactionType.EXPENSE)
+    val incomeCategory = saveCategory("日別集計開始日収入カテゴリ", TransactionType.INCOME)
+    saveTransaction(
+      category = expenseCategory,
+      type = TransactionType.EXPENSE,
+      amount = 100,
+      transactionDate = LocalDate.of(2026, 7, 10),
+    )
+    saveTransferTransaction(amount = 999, transactionDate = LocalDate.of(2026, 7, 11))
+    saveTransaction(
+      category = incomeCategory,
+      type = TransactionType.INCOME,
+      amount = 200,
+      transactionDate = LocalDate.of(2026, 7, 12),
+    )
+    saveTransaction(
+      category = expenseCategory,
+      type = TransactionType.EXPENSE,
+      amount = 50,
+      transactionDate = LocalDate.of(2026, 7, 12),
+    )
+
+    mockMvc
+      .perform(get("/api/summary/monthly/daily").param("year", "2026").param("month", "7"))
+      .andExpect(status().isOk)
+      .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+      .andExpect(jsonPath("$.year").value(2026))
+      .andExpect(jsonPath("$.month").value(7))
+      .andExpect(jsonPath("$.days.length()").value(22))
+      .andExpect(jsonPath("$.days[0].date").value("2026-07-10"))
+      .andExpect(jsonPath("$.days[0].incomeTotal").value(0))
+      .andExpect(jsonPath("$.days[0].expenseTotal").value(100))
+      .andExpect(jsonPath("$.days[1].date").value("2026-07-11"))
+      .andExpect(jsonPath("$.days[1].incomeTotal").value(0))
+      .andExpect(jsonPath("$.days[1].expenseTotal").value(0))
+      .andExpect(jsonPath("$.days[2].incomeTotal").value(200))
+      .andExpect(jsonPath("$.days[2].expenseTotal").value(50))
+      .andExpect(jsonPath("$.days[21].date").value("2026-07-31"))
+      .andExpect(jsonPath("$.days[21].incomeTotal").value(0))
+      .andExpect(jsonPath("$.days[21].expenseTotal").value(0))
+  }
+
+  @Test
+  fun dailySummaryReturnsEveryDayFromMonthStartAfterFirstRecordedMonth() {
+    val expenseCategory = saveCategory("日別集計翌月支出カテゴリ", TransactionType.EXPENSE)
+    saveTransaction(
+      category = expenseCategory,
+      type = TransactionType.EXPENSE,
+      amount = 100,
+      transactionDate = LocalDate.of(2026, 7, 10),
+    )
+
+    mockMvc
+      .perform(get("/api/summary/monthly/daily").param("year", "2026").param("month", "8"))
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$.days.length()").value(31))
+      .andExpect(jsonPath("$.days[0].date").value("2026-08-01"))
+      .andExpect(jsonPath("$.days[0].incomeTotal").value(0))
+      .andExpect(jsonPath("$.days[0].expenseTotal").value(0))
+      .andExpect(jsonPath("$.days[30].date").value("2026-08-31"))
+  }
+
+  @Test
   fun invalidYearMonthReturnsBadRequest() {
     mockMvc
       .perform(get("/api/summary/monthly").param("year", "2026").param("month", "13"))

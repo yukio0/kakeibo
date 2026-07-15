@@ -97,6 +97,18 @@ export type MonthlyTrend = {
   months: MonthlySummary[]
 }
 
+export type DailySummaryItem = {
+  date: string
+  incomeTotal: number
+  expenseTotal: number
+}
+
+export type DailySummary = {
+  year: number
+  month: number
+  days: DailySummaryItem[]
+}
+
 export type AuthUser = {
   username: string
   twoFactorEnabled: boolean
@@ -405,6 +417,10 @@ export function saveMonthlyTransactions(
 
 export function getMonthlySummary(year: number, month: number): Promise<MonthlySummary> {
   return apiRequest<MonthlySummary>(`/api/summary/monthly?year=${year}&month=${month}`)
+}
+
+export function getMonthlyDailySummary(year: number, month: number): Promise<DailySummary> {
+  return apiRequest<DailySummary>(`/api/summary/monthly/daily?year=${year}&month=${month}`)
 }
 
 export function getMonthlyCategoryExpenses(

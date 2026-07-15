@@ -169,3 +169,44 @@ test('集計画面: 月次の収支推移グラフを表示する', async ({ pag
 
   await saveScreenshot(page, testInfo, 'summary-trend-chart')
 })
+
+test('集計画面: 最初に入力した日から日別の収支を表示する', async ({ page }) => {
+  await loginThroughMfa(page)
+
+  const headers = await csrfHeader(page)
+  const categories = await fetchItems(page, '/api/categories')
+  const paymentMethods = await fetchItems(page, '/api/payment-methods')
+  const current = monthAt(0)
+  const firstDate = current.date.replace(/-15$/, '-10')
+  const incomeDate = current.date.replace(/-15$/, '-12')
+  const cashId = idByName(paymentMethods, '現金')
+
+  await createTransaction(
+    page,
+    headers,
+    { ...current, date: firstDate },
+    'EXPENSE',
+    idByName(categories, '食費'),
+    cashId,
+    1000,
+  )
+  await createTransaction(
+    page,
+    headers,
+    { ...current, date: incomeDate },
+    'INCOME',
+    idByName(categories, '給与'),
+    cashId,
+    2000,
+  )
+
+  await page.getByRole('link', { name: '集計', exact: true }).click()
+
+  const dailyRows = page.locator('.daily-table tbody tr')
+  const lastDay = new Date(current.year, current.month, 0).getDate()
+  await expect(dailyRows).toHaveCount(lastDay - 10 + 1)
+  await expect(dailyRows.nth(0)).toContainText(`${current.month}/10`)
+  await expect(dailyRows.nth(0)).toContainText('1,000')
+  await expect(dailyRows.nth(2)).toContainText(`${current.month}/12`)
+  await expect(dailyRows.nth(2)).toContainText('2,000')
+})

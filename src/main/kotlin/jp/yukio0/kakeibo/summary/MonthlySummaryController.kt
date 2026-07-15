@@ -15,6 +15,12 @@ class MonthlySummaryController(private val monthlySummaryService: MonthlySummary
     @RequestParam(required = false) month: Int?,
   ): MonthlySummaryResponse = monthlySummaryService.getMonthlySummary(year, month)
 
+  @GetMapping("/monthly/daily")
+  fun getMonthlyDailySummary(
+    @RequestParam(required = false) year: Int?,
+    @RequestParam(required = false) month: Int?,
+  ): DailySummaryResponse = monthlySummaryService.getMonthlyDailySummary(year, month)
+
   @GetMapping("/monthly/categories")
   fun getMonthlyCategoryExpenses(
     @RequestParam(required = false) year: Int?,
