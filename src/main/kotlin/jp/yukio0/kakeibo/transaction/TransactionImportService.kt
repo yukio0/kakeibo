@@ -81,7 +81,7 @@ class TransactionImportService(
       val sourceName = row[2]
       val destinationName = row[3]
       val categoryId: Long
-      val paymentMethodId: Long
+      val paymentMethodId: Long?
       if (type == TransactionType.TRANSFER) {
         val source = transferAccountsByName[sourceName]
         val destination = transferAccountsByName[destinationName]
@@ -97,17 +97,22 @@ class TransactionImportService(
         paymentMethodId = destination.requiredId()
       } else {
         val category = categoriesByNameType[sourceName to type]
-        val paymentMethod = paymentMethodsByName[destinationName]
         if (category == null) {
           errors.add(TransactionImportError(rowNumber, "「${row[1]}」のカテゴリ「$sourceName」が見つかりません"))
           return@forEachIndexed
         }
-        if (paymentMethod == null) {
-          errors.add(TransactionImportError(rowNumber, "支払い方法「$destinationName」が見つかりません"))
-          return@forEachIndexed
-        }
         categoryId = category.requiredId()
-        paymentMethodId = paymentMethod.requiredId()
+        // 収入は支払い方法を持たないため、支払い方法列は無視して null にする。
+        if (type == TransactionType.INCOME) {
+          paymentMethodId = null
+        } else {
+          val paymentMethod = paymentMethodsByName[destinationName]
+          if (paymentMethod == null) {
+            errors.add(TransactionImportError(rowNumber, "支払い方法「$destinationName」が見つかりません"))
+            return@forEachIndexed
+          }
+          paymentMethodId = paymentMethod.requiredId()
+        }
       }
 
       resolvedRows.add(

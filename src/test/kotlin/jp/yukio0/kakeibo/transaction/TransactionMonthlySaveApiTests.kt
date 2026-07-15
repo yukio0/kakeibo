@@ -147,8 +147,9 @@ class TransactionMonthlySaveApiTests {
       .andExpect(jsonPath("$[1].type").value("INCOME"))
       .andExpect(jsonPath("$[1].categoryId").value(incomeCategory.id!!.toInt()))
       .andExpect(jsonPath("$[1].categoryName").value("一括保存API収入カテゴリ"))
-      .andExpect(jsonPath("$[1].paymentMethodId").value(defaultPaymentMethod().id!!.toInt()))
-      .andExpect(jsonPath("$[1].paymentMethodName").value("現金"))
+      // 収入は支払い方法を持たない(リクエストで送っても無視され null になる)。
+      .andExpect(jsonPath("$[1].paymentMethodId").doesNotExist())
+      .andExpect(jsonPath("$[1].paymentMethodName").doesNotExist())
       .andExpect(jsonPath("$[1].amount").value(5000))
       .andExpect(jsonPath("$[1].memo").value("更新後"))
       .andExpect(jsonPath("$[1].displayOrder").value(2))
@@ -473,6 +474,50 @@ class TransactionMonthlySaveApiTests {
   }
 
   @Test
+  fun monthlySaveStoresIncomeWithoutPaymentMethod() {
+    val incomeCategory = saveCategory("一括保存API収入支払いなしカテゴリ", TransactionType.INCOME)
+
+    mockMvc
+      .perform(
+        put("/api/transactions/monthly")
+          .param("year", "2026")
+          .param("month", "7")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(
+            """
+            [
+              {
+                "id": null,
+                "date": "2026-07-10",
+                "type": "INCOME",
+                "categoryId": ${incomeCategory.id},
+                "paymentMethodId": null,
+                "amount": 300000,
+                "memo": null,
+                "displayOrder": 0
+              }
+            ]
+            """
+              .trimIndent()
+          )
+      )
+      // 収入は支払い方法が未選択でもエラーにならず、null として保存・返却される。
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$", hasSize<Int>(1)))
+      .andExpect(jsonPath("$[0].type").value("INCOME"))
+      .andExpect(jsonPath("$[0].paymentMethodId").doesNotExist())
+      .andExpect(jsonPath("$[0].paymentMethodName").doesNotExist())
+
+    mockMvc
+      .perform(get("/api/transactions").param("year", "2026").param("month", "7"))
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$", hasSize<Int>(1)))
+      .andExpect(jsonPath("$[0].type").value("INCOME"))
+      .andExpect(jsonPath("$[0].paymentMethodId").doesNotExist())
+      .andExpect(jsonPath("$[0].paymentMethodName").doesNotExist())
+  }
+
+  @Test
   fun monthlySaveReturnsFieldErrorsForDateFormatAndDuplicateId() {
     val category = saveCategory("一括保存APIフィールドエラーカテゴリ", TransactionType.EXPENSE)
     val transaction =
@@ -572,7 +617,8 @@ class TransactionMonthlySaveApiTests {
     transactionRepository.saveAndFlush(
       TransactionEntity(
         category = category,
-        paymentMethod = defaultPaymentMethod(),
+        // 収入は支払い方法を持たない。
+        paymentMethod = if (type == TransactionType.INCOME) null else defaultPaymentMethod(),
         type = type,
         transactionDate = transactionDate,
         amount = amount,

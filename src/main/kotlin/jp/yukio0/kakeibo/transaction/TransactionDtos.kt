@@ -39,8 +39,9 @@ data class TransactionResponse(
   val type: TransactionType,
   val categoryId: Long,
   val categoryName: String,
-  val paymentMethodId: Long,
-  val paymentMethodName: String,
+  // 収入は支払い方法を持たないため null になり得る。
+  val paymentMethodId: Long?,
+  val paymentMethodName: String?,
   val amount: Int,
   val memo: String?,
   val displayOrder: Int,

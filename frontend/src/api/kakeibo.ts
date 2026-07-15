@@ -44,8 +44,9 @@ export type Transaction = {
   type: TransactionType
   categoryId: number
   categoryName: string
-  paymentMethodId: number
-  paymentMethodName: string
+  // 収入は支払い方法を持たないため null になり得る。
+  paymentMethodId: number | null
+  paymentMethodName: string | null
   amount: number
   memo: string | null
   displayOrder: number

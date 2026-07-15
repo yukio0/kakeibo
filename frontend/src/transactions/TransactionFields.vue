@@ -38,6 +38,10 @@ const amountLikelyValid = computed(
 )
 
 function isDisabled(field: EditableField): boolean {
+  // 収入は支払い方法を持たないため、支払い方法は常に選択不可(空欄)にする。
+  if (field === 'paymentMethodId' && row.value.type === 'INCOME') {
+    return true
+  }
   if (props.variant === 'card') {
     return false
   }
@@ -104,6 +108,7 @@ function isDisabled(field: EditableField): boolean {
       @focus="emit('field-focus')"
       @change="emit('field-input', 'paymentMethodId')"
     >
+      <option v-if="row.type === 'INCOME'" value="">—</option>
       <option v-for="option in paymentMethodOptions" :key="option.id" :value="option.id">
         {{ option.name }}
       </option>

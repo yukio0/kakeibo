@@ -458,7 +458,8 @@ class TransactionApiTests {
     transactionRepository.saveAndFlush(
       TransactionEntity(
         category = category,
-        paymentMethod = defaultPaymentMethod(),
+        // 収入は支払い方法を持たない。
+        paymentMethod = if (type == TransactionType.INCOME) null else defaultPaymentMethod(),
         type = type,
         transactionDate = transactionDate,
         amount = amount,

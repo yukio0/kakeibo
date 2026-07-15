@@ -50,7 +50,7 @@ class TransactionService(
             transaction.date,
             transaction.type.toCsvLabel(),
             transaction.categoryName,
-            transaction.paymentMethodName,
+            transaction.paymentMethodName.orEmpty(),
             transaction.amount.toString(),
             transaction.memo.orEmpty(),
           ),
@@ -119,14 +119,14 @@ class TransactionService(
       findPaymentMethods(
         commands
           .filterNot { it.type == TransactionType.TRANSFER }
-          .map { it.paymentMethodId }
+          .mapNotNull { it.paymentMethodId }
           .toSet()
       )
     val transferAccounts =
       findTransferAccounts(
         commands
           .filter { it.type == TransactionType.TRANSFER }
-          .flatMap { listOf(it.categoryId, it.paymentMethodId) }
+          .flatMap { listOfNotNull(it.categoryId, it.paymentMethodId) }
           .toSet()
       )
     validateCategoryTypes(commands, categories)
@@ -148,10 +148,12 @@ class TransactionService(
         transaction.category = null
         transaction.paymentMethod = null
         transaction.transferSource = transferAccounts.getValue(command.categoryId)
-        transaction.transferDestination = transferAccounts.getValue(command.paymentMethodId)
+        transaction.transferDestination =
+          transferAccounts.getValue(requireNotNull(command.paymentMethodId))
       } else {
         transaction.category = categories.getValue(command.categoryId)
-        transaction.paymentMethod = paymentMethods.getValue(command.paymentMethodId)
+        // 収入は支払い方法を持たない(command.paymentMethodId が null)。
+        transaction.paymentMethod = command.paymentMethodId?.let { paymentMethods.getValue(it) }
         transaction.transferSource = null
         transaction.transferDestination = null
       }
@@ -241,7 +243,12 @@ class TransactionService(
 
     return listOfNotNull(
       targetValidationError(index, "categoryId", categoryId, categoryMessage),
-      targetValidationError(index, "paymentMethodId", paymentMethodId, paymentMethodMessage),
+      // 収入は支払い方法を持たないため必須にしない。
+      if (type == TransactionType.INCOME) {
+        null
+      } else {
+        targetValidationError(index, "paymentMethodId", paymentMethodId, paymentMethodMessage)
+      },
     )
   }
 
@@ -373,7 +380,7 @@ class TransactionService(
 
   private fun TransactionEntity.toMonthlySaveRequest(): TransactionMonthlySaveRequest {
     val categoryId: Long
-    val paymentMethodId: Long
+    val paymentMethodId: Long?
 
     if (type == TransactionType.TRANSFER) {
       categoryId = (transferSource ?: error("Transfer source is not assigned")).requiredId()
@@ -381,7 +388,13 @@ class TransactionService(
         (transferDestination ?: error("Transfer destination is not assigned")).requiredId()
     } else {
       categoryId = (category ?: error("Category is not assigned")).requiredId()
-      paymentMethodId = (paymentMethod ?: error("Payment method is not assigned")).requiredId()
+      // 収入は支払い方法を持たない。支出のみ必須。
+      paymentMethodId =
+        if (type == TransactionType.INCOME) {
+          null
+        } else {
+          (paymentMethod ?: error("Payment method is not assigned")).requiredId()
+        }
     }
 
     return TransactionMonthlySaveRequest(
@@ -421,7 +434,8 @@ class TransactionService(
       transactionDate = transactionDate,
       type = type!!,
       categoryId = categoryId!!,
-      paymentMethodId = paymentMethodId!!,
+      // 収入は支払い方法を持たない。
+      paymentMethodId = if (type == TransactionType.INCOME) null else paymentMethodId!!,
       amount = amount!!,
       memo = memo,
       displayOrder = displayOrder!!,
@@ -446,8 +460,8 @@ class TransactionService(
   private fun TransactionEntity.toResponse(): TransactionResponse {
     val categoryId: Long
     val categoryName: String
-    val paymentMethodId: Long
-    val paymentMethodName: String
+    val paymentMethodId: Long?
+    val paymentMethodName: String?
 
     if (type == TransactionType.TRANSFER) {
       val source = transferSource ?: error("Transfer source is not assigned")
@@ -458,11 +472,17 @@ class TransactionService(
       paymentMethodName = destination.name
     } else {
       val selectedCategory = category ?: error("Category is not assigned")
-      val selectedPaymentMethod = paymentMethod ?: error("Payment method is not assigned")
       categoryId = selectedCategory.requiredId()
       categoryName = selectedCategory.name
-      paymentMethodId = selectedPaymentMethod.requiredId()
-      paymentMethodName = selectedPaymentMethod.name
+      // 収入は支払い方法を持たない(既存データが持っていても null として扱う)。
+      if (type == TransactionType.INCOME) {
+        paymentMethodId = null
+        paymentMethodName = null
+      } else {
+        val selectedPaymentMethod = paymentMethod ?: error("Payment method is not assigned")
+        paymentMethodId = selectedPaymentMethod.requiredId()
+        paymentMethodName = selectedPaymentMethod.name
+      }
     }
 
     return TransactionResponse(
@@ -534,7 +554,8 @@ class TransactionService(
     val transactionDate: LocalDate,
     val type: TransactionType,
     val categoryId: Long,
-    val paymentMethodId: Long,
+    // 収入は支払い方法を持たないため null。
+    val paymentMethodId: Long?,
     val amount: Int,
     val memo: String?,
     val displayOrder: Int,

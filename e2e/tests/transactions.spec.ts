@@ -50,6 +50,40 @@ test('家計簿を1件登録して再表示する', async ({ page }, testInfo) =
   expect(download.suggestedFilename()).toBe('kakeibo-all.csv')
 })
 
+test('収入では支払い方法が空欄・選択不可になる', async ({ page }, testInfo) => {
+  await loginThroughMfa(page)
+
+  const row = findNewTransactionRow(page)
+  await row.locator('input[type="date"]').fill(currentLocalDate())
+  await row.locator('select').nth(0).selectOption('INCOME')
+
+  // 種別を収入にすると支払い方法は空欄かつ選択不可になる
+  const paymentSelect = row.locator('select').nth(2)
+  await expect(paymentSelect).toBeDisabled()
+  await expect(paymentSelect).toHaveValue('')
+
+  await row.locator('select').nth(1).selectOption({ label: '給与' })
+
+  const saveResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/transactions?') &&
+      response.request().method() === 'POST' &&
+      response.ok(),
+  )
+  await row.locator('input[type="number"]').fill('300000')
+  await row.getByRole('button', { name: '登録', exact: true }).click()
+  await saveResponse
+
+  await expect(page.getByText('登録済み 1件', { exact: true })).toBeVisible()
+
+  // 再読込しても収入行の支払い方法は空欄・選択不可のまま
+  await page.reload()
+  const savedRow = findEditableTransactionRow(page)
+  await expect(savedRow.locator('select').nth(2)).toBeDisabled()
+  await expect(savedRow.locator('select').nth(2)).toHaveValue('')
+  await saveScreenshot(page, testInfo, 'transaction-income-no-payment')
+})
+
 test('CSV出力でデータがない場合はファイルを出力しない', async ({ page }) => {
   await loginThroughMfa(page)
 

@@ -47,9 +47,12 @@ export function validateEntries(
       errors.categoryId = categoryMessage
     }
 
+    // 収入は支払い方法を持たないため検証しない。
     const paymentMethodMessage = isTransfer
       ? transferAccountError(request.paymentMethodId, context, '振替先')
-      : paymentMethodError(request.paymentMethodId, context)
+      : request.type === 'INCOME'
+        ? undefined
+        : paymentMethodError(request.paymentMethodId, context)
     if (paymentMethodMessage) {
       errors.paymentMethodId = paymentMethodMessage
     }

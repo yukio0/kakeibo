@@ -299,7 +299,7 @@ function applyTransaction(row: TransactionRow, transaction: Transaction): void {
   row.date = transaction.date
   row.type = transaction.type
   row.categoryId = transaction.categoryId
-  row.paymentMethodId = transaction.paymentMethodId
+  row.paymentMethodId = transaction.paymentMethodId ?? ''
   row.amount = transaction.amount
   row.memo = transaction.memo ?? ''
 }
@@ -357,7 +357,10 @@ function applyTypeDefaults(row: TransactionRow): void {
   if (selectedCategory?.type !== row.type) {
     row.categoryId = defaultCategoryId(row.type)
   }
-  if (!isPaymentMethodId(row.paymentMethodId)) {
+  // 収入は支払い方法を持たないため空欄にする。支出のみ既定値を補う。
+  if (row.type === 'INCOME') {
+    row.paymentMethodId = ''
+  } else if (!isPaymentMethodId(row.paymentMethodId)) {
     row.paymentMethodId = defaultPaymentMethodId()
   }
 }
@@ -967,7 +970,10 @@ async function deleteFromSheet(): Promise<void> {
                 ><span class="entry-date">{{ row.date }}</span></span
               ><span class="entry-amount">{{ formatCurrency(Number(row.amount) || 0) }}</span></span
             >
-            <span class="entry-detail">{{ rowCategoryName(row) }} → {{ rowPaymentName(row) }}</span>
+            <span class="entry-detail"
+              >{{ rowCategoryName(row)
+              }}<template v-if="rowPaymentName(row)"> → {{ rowPaymentName(row) }}</template></span
+            >
             <span v-if="row.memo" class="entry-memo">{{ row.memo }}</span>
           </button>
         </li>

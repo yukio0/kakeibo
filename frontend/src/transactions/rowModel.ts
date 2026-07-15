@@ -67,7 +67,7 @@ export function toRow(transaction: Transaction): TransactionRow {
     date: transaction.date,
     type: transaction.type,
     categoryId: transaction.categoryId,
-    paymentMethodId: transaction.paymentMethodId,
+    paymentMethodId: transaction.paymentMethodId ?? '',
     amount: transaction.amount,
     memo: transaction.memo ?? '',
     deleted: false,
