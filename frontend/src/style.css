@@ -1239,6 +1239,135 @@ textarea:focus {
   font-variant-numeric: tabular-nums;
 }
 
+.budget-section .message {
+  margin-bottom: 1rem;
+}
+
+.budget-overall {
+  display: grid;
+  gap: 1rem;
+}
+
+.budget-overall-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 1rem;
+}
+
+.budget-metric {
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+  min-height: 7.25rem;
+  padding: 1rem;
+  border-radius: 0.9rem;
+  background: #f8fafc;
+}
+
+.budget-metric > span:first-child {
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.budget-metric strong {
+  color: #111827;
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-input-metric small {
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.budget-amount-input {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+.budget-amount-input input {
+  min-width: 8rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-progress-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.budget-progress-summary p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.budget-progress-track {
+  height: 0.75rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.budget-progress-value {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+  transition: width 0.2s ease;
+}
+
+.budget-progress-value.budget-progress-over {
+  background: #dc2626;
+}
+
+.budget-category-heading {
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.budget-category-heading h3 {
+  margin: 0;
+  color: #111827;
+}
+
+.budget-category-heading p {
+  margin: 0.35rem 0 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.budget-table .numeric-cell {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-table tbody th {
+  min-width: 160px;
+  padding: 0.85rem;
+  border-top: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.budget-input-cell {
+  min-width: 190px;
+}
+
+.budget-over-value {
+  color: #b91c1c !important;
+}
+
 /* CSV取り込みのプレビュー・エラー表示 */
 .import-plan-table .numeric-cell {
   text-align: right;
@@ -1269,7 +1398,17 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
+  .budget-overall-grid {
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+  }
+
   .donut-figure {
     max-width: 220px;
+  }
+}
+
+@media (max-width: 480px) {
+  .budget-overall-grid {
+    grid-template-columns: 1fr;
   }
 }

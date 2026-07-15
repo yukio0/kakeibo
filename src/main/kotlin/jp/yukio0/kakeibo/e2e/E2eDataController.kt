@@ -27,6 +27,7 @@ class E2eDataController(
   fun reset() {
     jdbcTemplate.update("DELETE FROM trusted_devices")
     jdbcTemplate.update("DELETE FROM transactions")
+    jdbcTemplate.update("DELETE FROM monthly_budgets")
     jdbcTemplate.update("DELETE FROM categories")
     jdbcTemplate.update("DELETE FROM payment_methods")
     jdbcTemplate.update("DELETE FROM transfer_accounts")

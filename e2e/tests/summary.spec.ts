@@ -127,6 +127,63 @@ test('集計画面: カテゴリ別支出の円グラフを表示する', async 
   await saveScreenshot(page, testInfo, 'summary-pie-chart')
 })
 
+test('集計画面: 月全体とカテゴリ別の予算を自動保存する', async ({ page }, testInfo) => {
+  await loginThroughMfa(page)
+
+  const headers = await csrfHeader(page)
+  const categories = await fetchItems(page, '/api/categories')
+  const paymentMethods = await fetchItems(page, '/api/payment-methods')
+  const current = monthAt(0)
+
+  await createTransaction(
+    page,
+    headers,
+    current,
+    'EXPENSE',
+    idByName(categories, '食費'),
+    idByName(paymentMethods, '現金'),
+    12000,
+  )
+
+  await page.getByRole('link', { name: '集計', exact: true }).click()
+
+  const overallBudgetInput = page.getByRole('spinbutton', { name: '月全体の予算' })
+  await expect(overallBudgetInput).toHaveValue('')
+
+  const overallSave = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      new URL(response.url()).pathname === '/api/budgets/monthly',
+  )
+  await overallBudgetInput.fill('10000')
+  await overallBudgetInput.blur()
+  await overallSave
+
+  const overall = page.locator('.budget-overall')
+  await expect(overall).toContainText('12,000')
+  await expect(overall).toContainText('2,000')
+
+  const foodBudgetInput = page.getByRole('spinbutton', { name: '食費の予算' })
+  const categorySave = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PUT' &&
+      new URL(response.url()).pathname === '/api/budgets/monthly',
+  )
+  await foodBudgetInput.fill('15000')
+  await foodBudgetInput.blur()
+  await categorySave
+
+  const foodBudgetRow = page.locator('.budget-table tbody tr').filter({ hasText: '食費' })
+  await expect(foodBudgetRow).toContainText('12,000')
+  await expect(foodBudgetRow).toContainText('3,000')
+
+  await page.reload()
+  await expect(overallBudgetInput).toHaveValue('10000')
+  await expect(foodBudgetInput).toHaveValue('15000')
+
+  await saveScreenshot(page, testInfo, 'summary-budget')
+})
+
 test('集計画面: 月次の収支推移グラフを表示する', async ({ page }, testInfo) => {
   await loginThroughMfa(page)
 

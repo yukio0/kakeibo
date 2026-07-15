@@ -28,6 +28,8 @@ class DatabaseMigrationTests {
           AND LOWER(table_name) IN (
             'app_user',
             'categories',
+            'category_budgets',
+            'monthly_budgets',
             'payment_methods',
             'transfer_accounts',
             'transactions',
@@ -44,7 +46,7 @@ class DatabaseMigrationTests {
     val transferAccountCount =
       jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transfer_accounts", Int::class.java)
 
-    assertEquals(6, tableCount)
+    assertEquals(8, tableCount)
     assertEquals(13, categoryCount)
     assertEquals(4, paymentMethodCount)
     assertEquals(2, transferAccountCount)
@@ -57,6 +59,40 @@ class DatabaseMigrationTests {
         """
         INSERT INTO categories (name, type, display_order)
         VALUES ('不正カテゴリ', 'INVALID', 0)
+        """
+          .trimIndent()
+      )
+    }
+  }
+
+  @Test
+  fun databaseRejectsZeroOverallBudget() {
+    assertFailsWith<DataIntegrityViolationException> {
+      jdbcTemplate.update(
+        """
+        INSERT INTO monthly_budgets (budget_year, budget_month, overall_budget)
+        VALUES (2090, 1, 0)
+        """
+          .trimIndent()
+      )
+    }
+  }
+
+  @Test
+  fun databaseRejectsDuplicatedMonthlyBudget() {
+    jdbcTemplate.update(
+      """
+      INSERT INTO monthly_budgets (budget_year, budget_month, overall_budget)
+      VALUES (2090, 2, 10000)
+      """
+        .trimIndent()
+    )
+
+    assertFailsWith<DataIntegrityViolationException> {
+      jdbcTemplate.update(
+        """
+        INSERT INTO monthly_budgets (budget_year, budget_month, overall_budget)
+        VALUES (2090, 2, 20000)
         """
           .trimIndent()
       )

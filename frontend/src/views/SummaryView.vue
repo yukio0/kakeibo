@@ -2,11 +2,15 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { toMessage } from '@/api/http'
 import {
+  getMonthlyBudget,
   getMonthlyCategoryExpenses,
   getMonthlyDailySummary,
   getMonthlyTrend,
+  updateMonthlyBudget,
   type CategoryExpenseSummary,
   type DailySummary,
+  type MonthlyBudget,
+  type MonthlyBudgetRequest,
   type MonthlySummary,
 } from '@/api/kakeibo'
 import { pad2 } from '@/transactions/dates'
@@ -29,6 +33,13 @@ const CATEGORY_PALETTE = [
 ]
 const OTHER_COLOR = '#94a3b8'
 const MAX_SLICES = CATEGORY_PALETTE.length
+const MAX_BUDGET_AMOUNT = 2_147_483_647
+
+type BudgetSaveSnapshot = {
+  periodKey: string
+  requestKey: string
+  request: MonthlyBudgetRequest
+}
 
 const today = new Date()
 const period = reactive({
@@ -39,8 +50,20 @@ const period = reactive({
 const summary = ref<CategoryExpenseSummary | null>(null)
 const trend = ref<MonthlySummary[]>([])
 const dailySummary = ref<DailySummary | null>(null)
+const budget = ref<MonthlyBudget | null>(null)
+const overallBudgetInput = ref<string | number>('')
+const categoryBudgetInputs = reactive<Record<number, string | number>>({})
 const loading = ref(true)
 const loadError = ref<string | null>(null)
+const budgetValidationError = ref<string | null>(null)
+const budgetSaveError = ref<string | null>(null)
+
+let loadSequence = 0
+let activeBudgetSave: BudgetSaveSnapshot | null = null
+const pendingBudgetSaves: BudgetSaveSnapshot[] = []
+const lastSavedBudgetKeys = new Map<string, string>()
+const latestBudgetResponses = new Map<string, MonthlyBudget>()
+const budgetSaveVersions = new Map<string, number>()
 
 const monthInputValue = computed(() => `${period.year}-${pad2(period.month)}`)
 const periodLabel = computed(() => `${period.year}年${period.month}月`)
@@ -90,30 +113,71 @@ const hasTrendData = computed(() =>
 )
 const dailyRows = computed(() => dailySummary.value?.days ?? [])
 const hasDailyData = computed(() => dailyRows.value.length > 0)
+const budgetRows = computed(() => budget.value?.categories ?? [])
+const budgetMessage = computed(() => budgetValidationError.value ?? budgetSaveError.value)
+const overallUsagePercent = computed(() => {
+  const overallBudget = budget.value?.overallBudget
+  if (overallBudget === null || overallBudget === undefined) {
+    return 0
+  }
+  return (budget.value!.spentAmount / overallBudget) * 100
+})
+const overallProgressWidth = computed(() => `${Math.min(overallUsagePercent.value, 100)}%`)
 
 onMounted(() => {
   void loadSummary()
 })
 
 async function loadSummary(): Promise<void> {
+  const requestSequence = ++loadSequence
+  const year = period.year
+  const month = period.month
+  const requestedPeriodKey = toPeriodKey(year, month)
+  const budgetSaveVersion = budgetSaveVersions.get(requestedPeriodKey) ?? 0
+
   loading.value = true
   loadError.value = null
+  budgetValidationError.value = null
+  budgetSaveError.value = null
   try {
-    const [categorySummary, trendSummary, daily] = await Promise.all([
-      getMonthlyCategoryExpenses(period.year, period.month),
-      getMonthlyTrend(period.year, period.month, TREND_MONTHS),
-      getMonthlyDailySummary(period.year, period.month),
+    const [categorySummary, trendSummary, daily, monthlyBudget] = await Promise.all([
+      getMonthlyCategoryExpenses(year, month),
+      getMonthlyTrend(year, month, TREND_MONTHS),
+      getMonthlyDailySummary(year, month),
+      getMonthlyBudget(year, month),
     ])
+
+    if (requestSequence !== loadSequence) {
+      return
+    }
+
     summary.value = categorySummary
     trend.value = trendSummary.months
     dailySummary.value = daily
+
+    const budgetChangedWhileLoading =
+      (budgetSaveVersions.get(requestedPeriodKey) ?? 0) !== budgetSaveVersion
+    if (!budgetChangedWhileLoading) {
+      latestBudgetResponses.set(requestedPeriodKey, monthlyBudget)
+    }
+    const newestBudget = budgetChangedWhileLoading
+      ? (latestBudgetResponses.get(requestedPeriodKey) ?? monthlyBudget)
+      : monthlyBudget
+    applyLoadedBudget(newestBudget, findOutstandingBudgetRequest(requestedPeriodKey))
   } catch (error) {
+    if (requestSequence !== loadSequence) {
+      return
+    }
+
     summary.value = null
     trend.value = []
     dailySummary.value = null
+    budget.value = null
     loadError.value = toMessage(error)
   } finally {
-    loading.value = false
+    if (requestSequence === loadSequence) {
+      loading.value = false
+    }
   }
 }
 
@@ -144,6 +208,10 @@ function formatCurrency(value: number): string {
   }).format(value)
 }
 
+function formatOptionalCurrency(value: number | null): string {
+  return value === null ? '未設定' : formatCurrency(value)
+}
+
 function formatPercent(value: number): string {
   return `${value.toFixed(1)}%`
 }
@@ -151,6 +219,231 @@ function formatPercent(value: number): string {
 function formatMonthDay(date: string): string {
   const [, month, day] = date.split('-')
   return `${Number(month)}/${Number(day)}`
+}
+
+function applyLoadedBudget(
+  monthlyBudget: MonthlyBudget,
+  inputRequest?: MonthlyBudgetRequest,
+): void {
+  budget.value = monthlyBudget
+  const formRequest = inputRequest ?? budgetResponseToRequest(monthlyBudget)
+  overallBudgetInput.value = toBudgetInput(formRequest.overallBudget)
+  const categoryAmounts = new Map(
+    formRequest.categoryBudgets.map((category) => [category.categoryId, category.amount]),
+  )
+
+  Object.keys(categoryBudgetInputs).forEach((key) => {
+    delete categoryBudgetInputs[Number(key)]
+  })
+  monthlyBudget.categories.forEach((category) => {
+    categoryBudgetInputs[category.categoryId] = toBudgetInput(
+      categoryAmounts.get(category.categoryId) ?? null,
+    )
+  })
+
+  if (!inputRequest) {
+    const request = budgetResponseToRequest(monthlyBudget)
+    lastSavedBudgetKeys.set(
+      toPeriodKey(monthlyBudget.year, monthlyBudget.month),
+      toRequestKey(request),
+    )
+  }
+}
+
+function toBudgetInput(value: number | null): string {
+  return value === null ? '' : String(value)
+}
+
+function budgetResponseToRequest(monthlyBudget: MonthlyBudget): MonthlyBudgetRequest {
+  return {
+    year: monthlyBudget.year,
+    month: monthlyBudget.month,
+    overallBudget: monthlyBudget.overallBudget,
+    categoryBudgets: monthlyBudget.categories.flatMap((category) =>
+      category.budgetAmount === null
+        ? []
+        : [{ categoryId: category.categoryId, amount: category.budgetAmount }],
+    ),
+  }
+}
+
+function handleBudgetInput(): void {
+  budgetValidationError.value = null
+  budgetSaveError.value = null
+}
+
+function handleBudgetCommit(event: Event): void {
+  const input = event.currentTarget as HTMLInputElement
+  if (!input.validity.valid) {
+    budgetValidationError.value = `予算は1円以上${MAX_BUDGET_AMOUNT.toLocaleString('ja-JP')}円以下の整数で入力するか、空欄にしてください。`
+    return
+  }
+
+  const snapshot = createBudgetSaveSnapshot()
+  if (!snapshot) {
+    return
+  }
+
+  budgetValidationError.value = null
+  enqueueBudgetSave(snapshot)
+}
+
+function createBudgetSaveSnapshot(): BudgetSaveSnapshot | null {
+  const monthlyBudget = budget.value
+  if (!monthlyBudget) {
+    return null
+  }
+
+  try {
+    const request = buildBudgetRequest(monthlyBudget)
+
+    return {
+      periodKey: toPeriodKey(request.year, request.month),
+      requestKey: toRequestKey(request),
+      request,
+    }
+  } catch (error) {
+    budgetValidationError.value =
+      error instanceof Error ? error.message : '予算を確認してください。'
+    return null
+  }
+}
+
+function buildBudgetRequest(monthlyBudget: MonthlyBudget): MonthlyBudgetRequest {
+  return {
+    year: period.year,
+    month: period.month,
+    overallBudget: parseBudgetAmount(overallBudgetInput.value, '月全体の予算'),
+    categoryBudgets: monthlyBudget.categories.flatMap((category) => {
+      const amount = parseBudgetAmount(
+        categoryBudgetInputs[category.categoryId] ?? '',
+        `${category.categoryName}の予算`,
+      )
+      return amount === null ? [] : [{ categoryId: category.categoryId, amount }]
+    }),
+  }
+}
+
+function parseBudgetAmount(value: string | number, label: string): number | null {
+  const trimmed = String(value).trim()
+  if (trimmed === '') {
+    return null
+  }
+
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(`${label}は1円以上の整数で入力するか、空欄にしてください。`)
+  }
+
+  const amount = Number(trimmed)
+  if (!Number.isSafeInteger(amount) || amount < 1 || amount > MAX_BUDGET_AMOUNT) {
+    throw new Error(
+      `${label}は1円以上${MAX_BUDGET_AMOUNT.toLocaleString('ja-JP')}円以下で入力してください。`,
+    )
+  }
+
+  return amount
+}
+
+function enqueueBudgetSave(snapshot: BudgetSaveSnapshot): void {
+  const pendingIndex = pendingBudgetSaves.findIndex(
+    (pending) => pending.periodKey === snapshot.periodKey,
+  )
+  if (pendingIndex >= 0) {
+    if (pendingBudgetSaves[pendingIndex].requestKey === snapshot.requestKey) {
+      return
+    }
+    pendingBudgetSaves.splice(pendingIndex, 1)
+  }
+
+  const activeForSamePeriod = activeBudgetSave?.periodKey === snapshot.periodKey
+  if (activeForSamePeriod && activeBudgetSave?.requestKey === snapshot.requestKey) {
+    return
+  }
+  if (!activeForSamePeriod && lastSavedBudgetKeys.get(snapshot.periodKey) === snapshot.requestKey) {
+    return
+  }
+
+  pendingBudgetSaves.push(snapshot)
+  void processPendingBudgetSaves()
+}
+
+async function processPendingBudgetSaves(): Promise<void> {
+  if (activeBudgetSave || pendingBudgetSaves.length === 0) {
+    return
+  }
+
+  const snapshot = pendingBudgetSaves.shift()!
+  activeBudgetSave = snapshot
+
+  try {
+    const savedBudget = await updateMonthlyBudget(snapshot.request)
+    lastSavedBudgetKeys.set(snapshot.periodKey, snapshot.requestKey)
+    latestBudgetResponses.set(snapshot.periodKey, savedBudget)
+    budgetSaveVersions.set(
+      snapshot.periodKey,
+      (budgetSaveVersions.get(snapshot.periodKey) ?? 0) + 1,
+    )
+    budgetSaveError.value = null
+
+    const hasNewerSave = pendingBudgetSaves.some(
+      (pending) => pending.periodKey === snapshot.periodKey,
+    )
+    if (toPeriodKey(period.year, period.month) === snapshot.periodKey && !hasNewerSave) {
+      if (currentBudgetRequestKey() === snapshot.requestKey) {
+        applyLoadedBudget(savedBudget)
+      } else {
+        // 入力値はユーザーが編集中のため、フォームを戻さず集計値だけ更新する。
+        budget.value = savedBudget
+      }
+    }
+  } catch (error) {
+    budgetSaveError.value =
+      `${snapshot.request.year}年${snapshot.request.month}月の予算を保存できませんでした。` +
+      toMessage(error)
+  } finally {
+    activeBudgetSave = null
+    void processPendingBudgetSaves()
+  }
+}
+
+function currentBudgetRequestKey(): string | null {
+  const monthlyBudget = budget.value
+  if (
+    !monthlyBudget ||
+    monthlyBudget.year !== period.year ||
+    monthlyBudget.month !== period.month
+  ) {
+    return null
+  }
+
+  try {
+    return toRequestKey(buildBudgetRequest(monthlyBudget))
+  } catch {
+    return null
+  }
+}
+
+function findOutstandingBudgetRequest(periodKey: string): MonthlyBudgetRequest | undefined {
+  const pending = [...pendingBudgetSaves]
+    .reverse()
+    .find((snapshot) => snapshot.periodKey === periodKey)
+  if (pending) {
+    return pending.request
+  }
+  return activeBudgetSave?.periodKey === periodKey ? activeBudgetSave.request : undefined
+}
+
+function toPeriodKey(year: number, month: number): string {
+  return `${year}-${pad2(month)}`
+}
+
+function toRequestKey(request: MonthlyBudgetRequest): string {
+  return JSON.stringify({
+    ...request,
+    categoryBudgets: [...request.categoryBudgets].sort(
+      (left, right) => left.categoryId - right.categoryId,
+    ),
+  })
 }
 </script>
 
@@ -181,7 +474,137 @@ function formatMonthDay(date: string): string {
     </div>
   </section>
 
-  <p v-if="loadError" class="message error">{{ loadError }}</p>
+  <p v-if="loadError" class="message error" role="alert">{{ loadError }}</p>
+
+  <section class="category-section budget-section" aria-labelledby="monthly-budget-heading">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">予算</p>
+        <h2 id="monthly-budget-heading">{{ periodLabel }}の予算管理</h2>
+      </div>
+    </div>
+
+    <p v-show="budgetMessage" id="budget-error" class="message error" role="alert">
+      {{ budgetMessage }}
+    </p>
+    <p v-if="loading" class="empty-cell">読み込み中...</p>
+
+    <template v-else-if="budget">
+      <div class="budget-overall">
+        <div class="budget-overall-grid">
+          <label class="budget-metric budget-input-metric">
+            <span>月全体の予算</span>
+            <span class="budget-amount-input">
+              <input
+                v-model="overallBudgetInput"
+                type="number"
+                inputmode="numeric"
+                min="1"
+                :max="MAX_BUDGET_AMOUNT"
+                step="1"
+                aria-label="月全体の予算"
+                aria-describedby="budget-input-help budget-error"
+                @input="handleBudgetInput"
+                @change="handleBudgetCommit"
+                @blur="handleBudgetCommit"
+              />
+              <span aria-hidden="true">円</span>
+            </span>
+            <small id="budget-input-help">空欄にすると未設定になります</small>
+          </label>
+
+          <div class="budget-metric">
+            <span>使用額</span>
+            <strong>{{ formatCurrency(budget.spentAmount) }}</strong>
+          </div>
+          <div class="budget-metric">
+            <span>残額</span>
+            <strong>{{ formatOptionalCurrency(budget.remainingAmount) }}</strong>
+          </div>
+          <div class="budget-metric">
+            <span>超過額</span>
+            <strong :class="{ 'budget-over-value': (budget.overAmount ?? 0) > 0 }">
+              {{ formatOptionalCurrency(budget.overAmount) }}
+            </strong>
+          </div>
+        </div>
+
+        <div v-if="budget.overallBudget !== null" class="budget-progress-summary">
+          <div
+            class="budget-progress-track"
+            role="progressbar"
+            :aria-label="`${periodLabel}の月全体予算の使用状況`"
+            aria-valuemin="0"
+            :aria-valuemax="budget.overallBudget"
+            :aria-valuenow="Math.min(budget.spentAmount, budget.overallBudget)"
+            :aria-valuetext="`${formatCurrency(budget.overallBudget)}のうち${formatCurrency(budget.spentAmount)}を使用`"
+          >
+            <span
+              class="budget-progress-value"
+              :class="{ 'budget-progress-over': (budget.overAmount ?? 0) > 0 }"
+              :style="{ width: overallProgressWidth }"
+              aria-hidden="true"
+            />
+          </div>
+          <p>{{ formatPercent(overallUsagePercent) }}使用</p>
+        </div>
+      </div>
+
+      <div class="budget-category-heading">
+        <h3>カテゴリ別予算</h3>
+        <p>金額を入力して確定すると、対象月の予算を自動保存します。</p>
+      </div>
+
+      <p v-if="budgetRows.length === 0" class="empty-cell">支出カテゴリがありません。</p>
+
+      <div v-else class="table-wrap">
+        <table class="category-table budget-table">
+          <thead>
+            <tr>
+              <th scope="col">カテゴリ</th>
+              <th scope="col">予算</th>
+              <th scope="col" class="numeric-cell">使用額</th>
+              <th scope="col" class="numeric-cell">残額</th>
+              <th scope="col" class="numeric-cell">超過額</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="category in budgetRows" :key="category.categoryId">
+              <th scope="row">{{ category.categoryName }}</th>
+              <td class="budget-input-cell">
+                <span class="budget-amount-input">
+                  <input
+                    v-model="categoryBudgetInputs[category.categoryId]"
+                    type="number"
+                    inputmode="numeric"
+                    min="1"
+                    :max="MAX_BUDGET_AMOUNT"
+                    step="1"
+                    :aria-label="`${category.categoryName}の予算`"
+                    aria-describedby="budget-input-help budget-error"
+                    @input="handleBudgetInput"
+                    @change="handleBudgetCommit"
+                    @blur="handleBudgetCommit"
+                  />
+                  <span aria-hidden="true">円</span>
+                </span>
+              </td>
+              <td class="numeric-cell">{{ formatCurrency(category.spentAmount) }}</td>
+              <td class="numeric-cell">
+                {{ formatOptionalCurrency(category.remainingAmount) }}
+              </td>
+              <td
+                class="numeric-cell"
+                :class="{ 'budget-over-value': (category.overAmount ?? 0) > 0 }"
+              >
+                {{ formatOptionalCurrency(category.overAmount) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
+  </section>
 
   <section class="category-section">
     <div class="section-heading">

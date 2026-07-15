@@ -109,6 +109,37 @@ export type DailySummary = {
   days: DailySummaryItem[]
 }
 
+export type CategoryBudget = {
+  categoryId: number
+  categoryName: string
+  budgetAmount: number | null
+  spentAmount: number
+  remainingAmount: number | null
+  overAmount: number | null
+}
+
+export type MonthlyBudget = {
+  year: number
+  month: number
+  overallBudget: number | null
+  spentAmount: number
+  remainingAmount: number | null
+  overAmount: number | null
+  categories: CategoryBudget[]
+}
+
+export type CategoryBudgetRequest = {
+  categoryId: number
+  amount: number
+}
+
+export type MonthlyBudgetRequest = {
+  year: number
+  month: number
+  overallBudget: number | null
+  categoryBudgets: CategoryBudgetRequest[]
+}
+
 export type AuthUser = {
   username: string
   twoFactorEnabled: boolean
@@ -438,4 +469,15 @@ export function getMonthlyTrend(
   months: number,
 ): Promise<MonthlyTrend> {
   return apiRequest<MonthlyTrend>(`/api/summary/trend?year=${year}&month=${month}&months=${months}`)
+}
+
+export function getMonthlyBudget(year: number, month: number): Promise<MonthlyBudget> {
+  return apiRequest<MonthlyBudget>(`/api/budgets/monthly?year=${year}&month=${month}`)
+}
+
+export function updateMonthlyBudget(request: MonthlyBudgetRequest): Promise<MonthlyBudget> {
+  return apiRequest<MonthlyBudget>('/api/budgets/monthly', {
+    method: 'PUT',
+    body: request,
+  })
 }

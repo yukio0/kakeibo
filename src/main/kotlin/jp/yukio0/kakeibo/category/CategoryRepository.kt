@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.JpaRepository
 interface CategoryRepository : JpaRepository<CategoryEntity, Long> {
   fun findAllByOrderByTypeAscDisplayOrderAscIdAsc(): List<CategoryEntity>
 
+  fun findAllByTypeOrderByDisplayOrderAscIdAsc(type: TransactionType): List<CategoryEntity>
+
   fun findByNameAndType(name: String, type: TransactionType): CategoryEntity?
 
   fun countByType(type: TransactionType): Long
