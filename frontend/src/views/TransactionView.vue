@@ -113,30 +113,11 @@ const mobileEntries = computed(() =>
 const hasDirtyChanges = computed(
   () => !isBlankNewRow(newRow) || rows.value.some((row) => isRowDirty(row)),
 )
-const screenSummary = computed(() => {
-  const totals = rows.value.reduce(
-    (current, row) => {
-      const amount = Number(row.amount)
-      if (!Number.isInteger(amount) || amount < 1) {
-        return current
-      }
-      if (row.type === 'INCOME') {
-        current.incomeTotal += amount
-      } else if (row.type === 'EXPENSE') {
-        current.expenseTotal += amount
-      }
-      current.balance = current.incomeTotal - current.expenseTotal
-      return current
-    },
-    {
-      incomeTotal: 0,
-      expenseTotal: 0,
-      balance: 0,
-    },
-  )
-
-  return totals
-})
+const savedSummary = computed(() => ({
+  incomeTotal: persistedSummary.value?.incomeTotal ?? 0,
+  expenseTotal: persistedSummary.value?.expenseTotal ?? 0,
+  balance: persistedSummary.value?.balance ?? 0,
+}))
 
 const nameCollator = new Intl.Collator('ja')
 
@@ -599,17 +580,6 @@ function formatCurrency(value: number): string {
   }).format(value)
 }
 
-function persistedSummaryText(): string {
-  if (!persistedSummary.value) {
-    return '未取得'
-  }
-  return [
-    `収入 ${formatCurrency(persistedSummary.value.incomeTotal)}`,
-    `支出 ${formatCurrency(persistedSummary.value.expenseTotal)}`,
-    `差額 ${formatCurrency(persistedSummary.value.balance)}`,
-  ].join(' / ')
-}
-
 function typeLabel(type: TransactionType): string {
   if (type === 'INCOME') {
     return '収入'
@@ -798,19 +768,17 @@ async function deleteFromSheet(): Promise<void> {
     <div class="summary-grid" aria-label="月次集計">
       <div class="summary-card expense">
         <span>支出合計</span>
-        <strong>{{ formatCurrency(screenSummary.expenseTotal) }}</strong>
+        <strong>{{ formatCurrency(savedSummary.expenseTotal) }}</strong>
       </div>
       <div class="summary-card income">
         <span>収入合計</span>
-        <strong>{{ formatCurrency(screenSummary.incomeTotal) }}</strong>
+        <strong>{{ formatCurrency(savedSummary.incomeTotal) }}</strong>
       </div>
       <div class="summary-card balance">
         <span>差額</span>
-        <strong>{{ formatCurrency(screenSummary.balance) }}</strong>
+        <strong>{{ formatCurrency(savedSummary.balance) }}</strong>
       </div>
     </div>
-
-    <p class="summary-note">API集計: {{ persistedSummaryText() }}</p>
   </section>
 
   <p v-if="loadError" class="message error">{{ loadError }}</p>

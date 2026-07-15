@@ -50,6 +50,54 @@ test('家計簿を1件登録して再表示する', async ({ page }, testInfo) =
   expect(download.suggestedFilename()).toBe('kakeibo-all.csv')
 })
 
+test('月次集計は未保存の入力では変わらず、登録・更新後に変わる', async ({ page }) => {
+  await loginThroughMfa(page)
+
+  const expenseTotal = page.locator('.summary-card.expense strong')
+  const incomeTotal = page.locator('.summary-card.income strong')
+  const balance = page.locator('.summary-card.balance strong')
+  await expect(page.getByText(/^API集計:/)).toHaveCount(0)
+  await expect(expenseTotal).toHaveText('￥0')
+  await expect(incomeTotal).toHaveText('￥0')
+  await expect(balance).toHaveText('￥0')
+
+  const newRow = findNewTransactionRow(page)
+  await newRow.locator('select').nth(1).selectOption({ label: '食費' })
+  await newRow.locator('select').nth(2).selectOption({ label: '現金' })
+  await newRow.locator('input[type="number"]').fill('1000')
+
+  await expect(expenseTotal).toHaveText('￥0')
+  await expect(balance).toHaveText('￥0')
+
+  let saved = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/transactions?') &&
+      response.request().method() === 'POST' &&
+      response.ok(),
+  )
+  await newRow.getByRole('button', { name: '登録', exact: true }).click()
+  await saved
+  await expect(expenseTotal).toHaveText('￥1,000')
+  await expect(incomeTotal).toHaveText('￥0')
+  await expect(balance).toHaveText('-￥1,000')
+
+  const savedRow = findEditableTransactionRow(page)
+  await savedRow.locator('input[type="number"]').fill('1500')
+  await expect(expenseTotal).toHaveText('￥1,000')
+  await expect(balance).toHaveText('-￥1,000')
+
+  saved = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/transactions/') &&
+      response.request().method() === 'PUT' &&
+      response.ok(),
+  )
+  await savedRow.getByRole('button', { name: '更新', exact: true }).click()
+  await saved
+  await expect(expenseTotal).toHaveText('￥1,500')
+  await expect(balance).toHaveText('-￥1,500')
+})
+
 test('収入では支払い方法が空欄・選択不可になる', async ({ page }, testInfo) => {
   await loginThroughMfa(page)
 
