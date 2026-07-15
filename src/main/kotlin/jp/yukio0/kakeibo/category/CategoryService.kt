@@ -2,11 +2,14 @@ package jp.yukio0.kakeibo.category
 
 import jp.yukio0.kakeibo.api.ApiFieldErrorResponse
 import jp.yukio0.kakeibo.api.ApiValidationException
+import jp.yukio0.kakeibo.api.BadRequestException
+import jp.yukio0.kakeibo.budget.CategoryBudgetRepository
 import jp.yukio0.kakeibo.domain.TransactionType
 import jp.yukio0.kakeibo.master.MasterCrudService
 import jp.yukio0.kakeibo.master.MasterLabels
 import jp.yukio0.kakeibo.master.normalizedName
 import jp.yukio0.kakeibo.master.requiredDisplayOrder
+import jp.yukio0.kakeibo.recurring.RecurringTransactionTemplateRepository
 import jp.yukio0.kakeibo.transaction.TransactionRepository
 import org.springframework.stereotype.Service
 
@@ -14,6 +17,8 @@ import org.springframework.stereotype.Service
 class CategoryService(
   private val categoryRepository: CategoryRepository,
   private val transactionRepository: TransactionRepository,
+  private val recurringTemplateRepository: RecurringTransactionTemplateRepository,
+  private val categoryBudgetRepository: CategoryBudgetRepository,
 ) : MasterCrudService<CategoryEntity, CategoryRequest, CategoryResponse>(categoryRepository) {
 
   override val labels =
@@ -62,7 +67,10 @@ class CategoryService(
   override fun isLastRemaining(entity: CategoryEntity): Boolean =
     categoryRepository.countByType(entity.type) <= 1
 
-  override fun isUsedByTransaction(id: Long): Boolean = transactionRepository.existsByCategoryId(id)
+  override fun isUsed(id: Long): Boolean =
+    transactionRepository.existsByCategoryId(id) ||
+      recurringTemplateRepository.existsByCategoryId(id) ||
+      categoryBudgetRepository.existsByCategoryId(id)
 
   override fun validate(request: CategoryRequest) {
     if (request.requiredType == TransactionType.TRANSFER) {
@@ -71,6 +79,12 @@ class CategoryService(
         message = "入力内容に誤りがあります",
         errors = listOf(ApiFieldErrorResponse(field = "type", message = message)),
       )
+    }
+  }
+
+  override fun validateUpdate(entity: CategoryEntity, request: CategoryRequest) {
+    if (entity.type != request.requiredType && isUsed(entity.requiredId())) {
+      throw BadRequestException("使用中のカテゴリは種別を変更できません")
     }
   }
 

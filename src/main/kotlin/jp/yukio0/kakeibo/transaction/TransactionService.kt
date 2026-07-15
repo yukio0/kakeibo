@@ -65,6 +65,61 @@ class TransactionService(
   fun create(year: Int?, month: Int?, request: TransactionSaveRequest): TransactionResponse =
     saveOne(year, month, id = null, request)
 
+  /** 対象月の既存データを残したまま、複数の家計簿データを一括追加する。 */
+  @Transactional
+  fun createBatch(
+    year: Int?,
+    month: Int?,
+    requests: List<TransactionSaveRequest>,
+  ): List<TransactionResponse> {
+    val monthlyPeriod = MonthlyPeriod.from(year, month)
+    val currentMaxDisplayOrder =
+      findMonthlyTransactions(monthlyPeriod).maxOfOrNull { it.displayOrder } ?: -10
+    val monthlyRequests = requests.mapIndexed { index, request ->
+      request.toMonthlySaveRequest(
+        id = null,
+        displayOrder = currentMaxDisplayOrder + (index + 1) * 10,
+      )
+    }
+    validateBeanConstraints(monthlyRequests)
+
+    val commands = monthlyRequests.mapIndexed { index, request ->
+      request.toCommand(index, monthlyPeriod)
+    }
+    val categories =
+      findCategories(
+        commands.filterNot { it.type == TransactionType.TRANSFER }.map { it.categoryId }.toSet()
+      )
+    val paymentMethods =
+      findPaymentMethods(
+        commands
+          .filterNot { it.type == TransactionType.TRANSFER }
+          .mapNotNull { it.paymentMethodId }
+          .toSet()
+      )
+    val transferAccounts =
+      findTransferAccounts(
+        commands
+          .filter { it.type == TransactionType.TRANSFER }
+          .flatMap { listOfNotNull(it.categoryId, it.paymentMethodId) }
+          .toSet()
+      )
+    validateCategoryTypes(commands, categories)
+
+    return commands
+      .map { command ->
+        val transaction =
+          TransactionEntity(
+            type = command.type,
+            transactionDate = command.transactionDate,
+            amount = command.amount,
+          )
+        applyCommand(transaction, command, categories, paymentMethods, transferAccounts)
+        transactionRepository.save(transaction)
+      }
+      .map { it.toResponse() }
+  }
+
   @Transactional
   fun update(
     year: Int?,
@@ -76,17 +131,8 @@ class TransactionService(
   @Transactional
   fun delete(year: Int?, month: Int?, id: Long) {
     val monthlyPeriod = MonthlyPeriod.from(year, month)
-    val requests = findMonthlyTransactions(monthlyPeriod).map { it.toMonthlySaveRequest() }
-    val index = requests.indexOfFirst { it.id == id }
-    if (index == -1) {
-      throw ResourceNotFoundException("家計簿データが見つかりません")
-    }
-
-    saveMonthly(
-      monthlyPeriod.year,
-      monthlyPeriod.month,
-      requests.filterIndexed { i, _ -> i != index },
-    )
+    val transaction = findTransactionInMonth(id, monthlyPeriod)
+    transactionRepository.delete(transaction)
   }
 
   /** 保存後の家計簿データを、リクエストと同じ並びで返す。呼び出し側は位置で新規行のIDを引き当てられる。 */
@@ -97,6 +143,8 @@ class TransactionService(
     requests: List<TransactionMonthlySaveRequest>,
   ): List<TransactionResponse> {
     val monthlyPeriod = MonthlyPeriod.from(year, month)
+    // この呼び出しの開始後に追加された行を、月次置換の削除対象へ含めない。
+    val monthlySnapshot = findMonthlyTransactions(monthlyPeriod)
     validateBeanConstraints(requests)
 
     val commands = requests.mapIndexed { index, request -> request.toCommand(index, monthlyPeriod) }
@@ -132,7 +180,7 @@ class TransactionService(
     validateCategoryTypes(commands, categories)
 
     transactionRepository.deleteAll(
-      findMonthlyTransactions(monthlyPeriod).filter { it.requiredId() !in requestedExistingIds }
+      monthlySnapshot.filter { it.requiredId() !in requestedExistingIds }
     )
 
     val savedTransactions = commands.map { command ->
@@ -144,24 +192,7 @@ class TransactionService(
             amount = command.amount,
           )
 
-      if (command.type == TransactionType.TRANSFER) {
-        transaction.category = null
-        transaction.paymentMethod = null
-        transaction.transferSource = transferAccounts.getValue(command.categoryId)
-        transaction.transferDestination =
-          transferAccounts.getValue(requireNotNull(command.paymentMethodId))
-      } else {
-        transaction.category = categories.getValue(command.categoryId)
-        // 収入は支払い方法を持たない(command.paymentMethodId が null)。
-        transaction.paymentMethod = command.paymentMethodId?.let { paymentMethods.getValue(it) }
-        transaction.transferSource = null
-        transaction.transferDestination = null
-      }
-      transaction.type = command.type
-      transaction.transactionDate = command.transactionDate
-      transaction.amount = command.amount
-      transaction.memo = command.memo
-      transaction.displayOrder = command.displayOrder
+      applyCommand(transaction, command, categories, paymentMethods, transferAccounts)
 
       if (command.id == null) {
         transactionRepository.save(transaction)
@@ -173,6 +204,33 @@ class TransactionService(
     return savedTransactions.map { it.toResponse() }
   }
 
+  private fun applyCommand(
+    transaction: TransactionEntity,
+    command: TransactionMonthlySaveCommand,
+    categories: Map<Long, CategoryEntity>,
+    paymentMethods: Map<Long, PaymentMethodEntity>,
+    transferAccounts: Map<Long, TransferAccountEntity>,
+  ) {
+    if (command.type == TransactionType.TRANSFER) {
+      transaction.category = null
+      transaction.paymentMethod = null
+      transaction.transferSource = transferAccounts.getValue(command.categoryId)
+      transaction.transferDestination =
+        transferAccounts.getValue(requireNotNull(command.paymentMethodId))
+    } else {
+      transaction.category = categories.getValue(command.categoryId)
+      // 収入は支払い方法を持たない(command.paymentMethodId が null)。
+      transaction.paymentMethod = command.paymentMethodId?.let { paymentMethods.getValue(it) }
+      transaction.transferSource = null
+      transaction.transferDestination = null
+    }
+    transaction.type = command.type
+    transaction.transactionDate = command.transactionDate
+    transaction.amount = command.amount
+    transaction.memo = command.memo
+    transaction.displayOrder = command.displayOrder
+  }
+
   private fun saveOne(
     year: Int?,
     month: Int?,
@@ -180,35 +238,60 @@ class TransactionService(
     request: TransactionSaveRequest,
   ): TransactionResponse {
     val monthlyPeriod = MonthlyPeriod.from(year, month)
-    val requests =
-      findMonthlyTransactions(monthlyPeriod).map { it.toMonthlySaveRequest() }.toMutableList()
-    val index =
-      if (id == null) {
-        requests.size
-      } else {
-        requests
-          .indexOfFirst { it.id == id }
-          .also {
-            if (it == -1) {
-              throw ResourceNotFoundException("家計簿データが見つかりません")
-            }
-          }
-      }
+    val existingTransaction = id?.let { findTransactionInMonth(it, monthlyPeriod) }
     val displayOrder =
-      if (id == null) {
-        (requests.maxOfOrNull { it.displayOrder ?: 0 } ?: -10) + 10
-      } else {
-        requests[index].displayOrder ?: 0
-      }
+      existingTransaction?.displayOrder
+        ?: ((findMonthlyTransactions(monthlyPeriod).maxOfOrNull { it.displayOrder } ?: -10) + 10)
     val saveRequest = request.toMonthlySaveRequest(id, displayOrder)
+    validateBeanConstraints(listOf(saveRequest))
 
-    if (id == null) {
-      requests.add(saveRequest)
-    } else {
-      requests[index] = saveRequest
+    val command = saveRequest.toCommand(index = 0, monthlyPeriod)
+    val categories =
+      findCategories(
+        if (command.type == TransactionType.TRANSFER) emptySet() else setOf(command.categoryId)
+      )
+    val paymentMethods =
+      findPaymentMethods(
+        if (command.type == TransactionType.TRANSFER) {
+          emptySet()
+        } else {
+          listOfNotNull(command.paymentMethodId).toSet()
+        }
+      )
+    val transferAccounts =
+      findTransferAccounts(
+        if (command.type == TransactionType.TRANSFER) {
+          listOfNotNull(command.categoryId, command.paymentMethodId).toSet()
+        } else {
+          emptySet()
+        }
+      )
+    validateCategoryTypes(listOf(command), categories)
+
+    val transaction =
+      existingTransaction
+        ?: TransactionEntity(
+          type = command.type,
+          transactionDate = command.transactionDate,
+          amount = command.amount,
+        )
+    applyCommand(transaction, command, categories, paymentMethods, transferAccounts)
+
+    return transactionRepository.save(transaction).toResponse()
+  }
+
+  private fun findTransactionInMonth(
+    id: Long,
+    monthlyPeriod: MonthlyPeriod,
+  ): TransactionEntity {
+    val transaction =
+      transactionRepository.findById(id).orElseThrow {
+        ResourceNotFoundException("家計簿データが見つかりません")
+      }
+    if (!transaction.transactionDate.isIn(monthlyPeriod)) {
+      throw ResourceNotFoundException("家計簿データが見つかりません")
     }
-
-    return saveMonthly(monthlyPeriod.year, monthlyPeriod.month, requests)[index]
+    return transaction
   }
 
   private fun validateBeanConstraints(requests: List<TransactionMonthlySaveRequest>) {

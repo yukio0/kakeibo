@@ -26,6 +26,8 @@ class E2eDataController(
   @Transactional
   fun reset() {
     jdbcTemplate.update("DELETE FROM trusted_devices")
+    jdbcTemplate.update("DELETE FROM recurring_transaction_registrations")
+    jdbcTemplate.update("DELETE FROM recurring_transaction_templates")
     jdbcTemplate.update("DELETE FROM transactions")
     jdbcTemplate.update("DELETE FROM monthly_budgets")
     jdbcTemplate.update("DELETE FROM categories")

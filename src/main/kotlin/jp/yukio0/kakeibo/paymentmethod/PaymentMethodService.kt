@@ -4,6 +4,7 @@ import jp.yukio0.kakeibo.master.MasterCrudService
 import jp.yukio0.kakeibo.master.MasterLabels
 import jp.yukio0.kakeibo.master.normalizedName
 import jp.yukio0.kakeibo.master.requiredDisplayOrder
+import jp.yukio0.kakeibo.recurring.RecurringTransactionTemplateRepository
 import jp.yukio0.kakeibo.transaction.TransactionRepository
 import org.springframework.stereotype.Service
 
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service
 class PaymentMethodService(
   private val paymentMethodRepository: PaymentMethodRepository,
   private val transactionRepository: TransactionRepository,
+  private val recurringTemplateRepository: RecurringTransactionTemplateRepository,
 ) :
   MasterCrudService<PaymentMethodEntity, PaymentMethodRequest, PaymentMethodResponse>(
     paymentMethodRepository
@@ -55,6 +57,7 @@ class PaymentMethodService(
   override fun isLastRemaining(entity: PaymentMethodEntity): Boolean =
     paymentMethodRepository.count() <= 1
 
-  override fun isUsedByTransaction(id: Long): Boolean =
-    transactionRepository.existsByPaymentMethodId(id)
+  override fun isUsed(id: Long): Boolean =
+    transactionRepository.existsByPaymentMethodId(id) ||
+      recurringTemplateRepository.existsByPaymentMethodId(id)
 }

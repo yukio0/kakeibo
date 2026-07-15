@@ -8,6 +8,7 @@ import MfaVerifyView from '@/views/MfaVerifyView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
 import PasswordChangeView from '@/views/PasswordChangeView.vue'
 import PaymentMethodView from '@/views/PaymentMethodView.vue'
+import RecurringTemplateView from '@/views/RecurringTemplateView.vue'
 import SummaryView from '@/views/SummaryView.vue'
 import TransferAccountView from '@/views/TransferAccountView.vue'
 import TransactionView from '@/views/TransactionView.vue'
@@ -20,6 +21,11 @@ export const router = createRouter({
       path: '/',
       name: 'home',
       component: TransactionView,
+    },
+    {
+      path: '/recurring-templates',
+      name: 'recurring-templates',
+      component: RecurringTemplateView,
     },
     {
       path: '/login',

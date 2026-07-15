@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ApiError, toMessage } from '@/api/http'
 import {
   createTransaction,
@@ -38,10 +39,12 @@ import TransactionFields from '@/transactions/TransactionFields.vue'
 type SortField = 'date' | 'type' | 'category' | 'paymentMethod' | 'amount'
 type SortDirection = 'asc' | 'desc'
 
+const route = useRoute()
 const today = new Date()
+const initialPeriod = parseMonthQuery(route.query.month)
 const period = reactive({
-  year: today.getFullYear(),
-  month: today.getMonth() + 1,
+  year: initialPeriod?.year ?? today.getFullYear(),
+  month: initialPeriod?.month ?? today.getMonth() + 1,
 })
 
 const categories = ref<Category[]>([])
@@ -401,6 +404,32 @@ function confirmDiscardChanges(): boolean {
   return window.confirm('未保存の変更があります。破棄して月を移動しますか？')
 }
 
+function handleRecurringLinkClick(
+  event: MouseEvent,
+  navigate: (event?: MouseEvent) => unknown,
+): void {
+  if (
+    hasDirtyChanges.value &&
+    !window.confirm('未保存の変更があります。破棄して定期取引画面へ移動しますか？')
+  ) {
+    event.preventDefault()
+    return
+  }
+  void navigate(event)
+}
+
+function parseMonthQuery(value: unknown): { year: number; month: number } | null {
+  const queryValue = Array.isArray(value) ? value[0] : typeof value === 'string' ? value : ''
+  const match = /^(\d{4})-(\d{2})$/.exec(queryValue)
+  if (!match) {
+    return null
+  }
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  return year >= 1 && month >= 1 && month <= 12 ? { year, month } : null
+}
+
 function categoriesForType(type: TransactionType): Category[] {
   return categories.value.filter((category) => category.type === type)
 }
@@ -750,6 +779,20 @@ async function deleteFromSheet(): Promise<void> {
       >
         次月
       </button>
+
+      <RouterLink
+        v-slot="{ href, navigate }"
+        :to="{ name: 'recurring-templates', query: { month: monthInputValue } }"
+        custom
+      >
+        <a
+          class="text-link recurring-entry-link"
+          :href="href"
+          @click="handleRecurringLinkClick($event, navigate)"
+        >
+          定期取引から登録
+        </a>
+      </RouterLink>
     </div>
 
     <div class="summary-grid" aria-label="月次集計">

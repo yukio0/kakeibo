@@ -140,6 +140,87 @@ export type MonthlyBudgetRequest = {
   categoryBudgets: CategoryBudgetRequest[]
 }
 
+export type RecurringTransactionTemplate = {
+  id: number
+  name: string
+  enabled: boolean
+  dayOfMonth: number
+  type: TransactionType
+  categoryId: number | null
+  categoryName: string | null
+  paymentMethodId: number | null
+  paymentMethodName: string | null
+  transferSourceId: number | null
+  transferSourceName: string | null
+  transferDestinationId: number | null
+  transferDestinationName: string | null
+  defaultAmount: number | null
+  memo: string | null
+  displayOrder: number
+}
+
+export type RecurringTransactionTemplateRequest = {
+  name: string
+  enabled: boolean
+  dayOfMonth: number
+  type: TransactionType
+  categoryId: number | null
+  paymentMethodId: number | null
+  transferSourceId: number | null
+  transferDestinationId: number | null
+  defaultAmount: number | null
+  memo: string | null
+  displayOrder: number
+}
+
+export type RecurringTransactionCandidate = {
+  templateId: number
+  templateName: string
+  registered: boolean
+  transactionId: number | null
+  date: string
+  type: TransactionType
+  categoryId: number | null
+  categoryName: string | null
+  paymentMethodId: number | null
+  paymentMethodName: string | null
+  transferSourceId: number | null
+  transferSourceName: string | null
+  transferDestinationId: number | null
+  transferDestinationName: string | null
+  amount: number | null
+  memo: string | null
+}
+
+export type RecurringTransactionCandidates = {
+  year: number
+  month: number
+  items: RecurringTransactionCandidate[]
+}
+
+export type RecurringTransactionRegistrationItem = {
+  templateId: number
+  date: string
+  type: TransactionType
+  categoryId: number | null
+  paymentMethodId: number | null
+  transferSourceId: number | null
+  transferDestinationId: number | null
+  amount: number
+  memo: string | null
+}
+
+export type RecurringTransactionRegistrationRequest = {
+  year: number
+  month: number
+  items: RecurringTransactionRegistrationItem[]
+}
+
+export type RecurringTransactionRegistrationResult = {
+  created: Transaction[]
+  skippedTemplateIds: number[]
+}
+
 export type AuthUser = {
   username: string
   twoFactorEnabled: boolean
@@ -352,6 +433,53 @@ export function updateTransferAccount(
 export function deleteTransferAccount(id: number): Promise<void> {
   return apiRequest<void>(`/api/transfer-accounts/${id}`, {
     method: 'DELETE',
+  })
+}
+
+export function getRecurringTransactionTemplates(): Promise<RecurringTransactionTemplate[]> {
+  return apiRequest<RecurringTransactionTemplate[]>('/api/recurring-templates')
+}
+
+export function createRecurringTransactionTemplate(
+  request: RecurringTransactionTemplateRequest,
+): Promise<RecurringTransactionTemplate> {
+  return apiRequest<RecurringTransactionTemplate>('/api/recurring-templates', {
+    method: 'POST',
+    body: request,
+  })
+}
+
+export function updateRecurringTransactionTemplate(
+  id: number,
+  request: RecurringTransactionTemplateRequest,
+): Promise<RecurringTransactionTemplate> {
+  return apiRequest<RecurringTransactionTemplate>(`/api/recurring-templates/${id}`, {
+    method: 'PUT',
+    body: request,
+  })
+}
+
+export function deleteRecurringTransactionTemplate(id: number): Promise<void> {
+  return apiRequest<void>(`/api/recurring-templates/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export function getRecurringTransactionCandidates(
+  year: number,
+  month: number,
+): Promise<RecurringTransactionCandidates> {
+  return apiRequest<RecurringTransactionCandidates>(
+    `/api/recurring-templates/candidates?year=${year}&month=${month}`,
+  )
+}
+
+export function registerRecurringTransactions(
+  request: RecurringTransactionRegistrationRequest,
+): Promise<RecurringTransactionRegistrationResult> {
+  return apiRequest<RecurringTransactionRegistrationResult>('/api/recurring-templates/register', {
+    method: 'POST',
+    body: request,
   })
 }
 

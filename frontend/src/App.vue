@@ -70,6 +70,7 @@ onBeforeUnmount(() => {
 
           <nav class="app-nav" aria-label="メインナビゲーション" @click="closeMenu">
             <RouterLink to="/">家計簿入力</RouterLink>
+            <RouterLink to="/recurring-templates">定期取引</RouterLink>
             <RouterLink to="/summary">集計</RouterLink>
             <RouterLink to="/csv-export">CSV入出力</RouterLink>
             <RouterLink to="/categories">カテゴリ管理</RouterLink>

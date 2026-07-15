@@ -543,6 +543,10 @@ textarea:focus {
   font-weight: 600;
 }
 
+.recurring-entry-link {
+  align-self: center;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(180px, 1fr));

@@ -4,6 +4,7 @@ import jp.yukio0.kakeibo.master.MasterCrudService
 import jp.yukio0.kakeibo.master.MasterLabels
 import jp.yukio0.kakeibo.master.normalizedName
 import jp.yukio0.kakeibo.master.requiredDisplayOrder
+import jp.yukio0.kakeibo.recurring.RecurringTransactionTemplateRepository
 import jp.yukio0.kakeibo.transaction.TransactionRepository
 import org.springframework.stereotype.Service
 
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service
 class TransferAccountService(
   private val transferAccountRepository: TransferAccountRepository,
   private val transactionRepository: TransactionRepository,
+  private val recurringTemplateRepository: RecurringTransactionTemplateRepository,
 ) :
   MasterCrudService<TransferAccountEntity, TransferAccountRequest, TransferAccountResponse>(
     transferAccountRepository
@@ -55,6 +57,7 @@ class TransferAccountService(
   override fun isLastRemaining(entity: TransferAccountEntity): Boolean =
     transferAccountRepository.count() <= 1
 
-  override fun isUsedByTransaction(id: Long): Boolean =
-    transactionRepository.existsByTransferSourceIdOrTransferDestinationId(id, id)
+  override fun isUsed(id: Long): Boolean =
+    transactionRepository.existsByTransferSourceIdOrTransferDestinationId(id, id) ||
+      recurringTemplateRepository.existsByTransferSourceIdOrTransferDestinationId(id, id)
 }

@@ -38,10 +38,14 @@ abstract class MasterCrudService<E : MasterEntity, REQ : MasterRequest, RES : An
 
   protected abstract fun isLastRemaining(entity: E): Boolean
 
-  protected abstract fun isUsedByTransaction(id: Long): Boolean
+  /** 家計簿データや定期取引テンプレートなど、削除を妨げる参照があるかを返す。 */
+  protected abstract fun isUsed(id: Long): Boolean
 
   /** 名前と表示順以外に固有の検査があるマスタだけが上書きする。 */
   protected open fun validate(request: REQ) {}
+
+  /** 更新前の値との比較が必要な検査があるマスタだけが上書きする。 */
+  protected open fun validateUpdate(entity: E, request: REQ) {}
 
   @Transactional(readOnly = true)
   open fun findAll(): List<RES> = findAllSorted().map { toResponse(it) }
@@ -58,6 +62,7 @@ abstract class MasterCrudService<E : MasterEntity, REQ : MasterRequest, RES : An
   open fun update(id: Long, request: REQ): RES {
     val entity = findOrThrow(id)
     validate(request)
+    validateUpdate(entity, request)
     rejectDuplicateName(request, excludedId = id)
 
     applyTo(entity, request)
@@ -70,7 +75,7 @@ abstract class MasterCrudService<E : MasterEntity, REQ : MasterRequest, RES : An
     if (isLastRemaining(entity)) {
       throw BadRequestException(labels.lastRemaining)
     }
-    if (isUsedByTransaction(id)) {
+    if (isUsed(id)) {
       throw BadRequestException(labels.inUse)
     }
 

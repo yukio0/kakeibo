@@ -1,10 +1,12 @@
 package jp.yukio0.kakeibo.category
 
 import java.time.LocalDate
+import jp.yukio0.kakeibo.budget.CategoryBudgetRepository
 import jp.yukio0.kakeibo.domain.TransactionType
 import jp.yukio0.kakeibo.paymentmethod.PaymentMethodRepository
 import jp.yukio0.kakeibo.transaction.TransactionEntity
 import jp.yukio0.kakeibo.transaction.TransactionRepository
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.hamcrest.Matchers.hasItem
@@ -39,6 +41,8 @@ class CategoryApiTests {
   @Autowired private lateinit var paymentMethodRepository: PaymentMethodRepository
 
   @Autowired private lateinit var transactionRepository: TransactionRepository
+
+  @Autowired private lateinit var categoryBudgetRepository: CategoryBudgetRepository
 
   private lateinit var mockMvc: MockMvc
 
@@ -263,6 +267,52 @@ class CategoryApiTests {
   }
 
   @Test
+  fun budgetedCategoryCannotBeDeleted() {
+    val category = saveExpenseCategory("予算設定済み削除不可テスト", 902)
+    val categoryId = category.id ?: error("Category id is not assigned")
+    saveCategoryBudget(categoryId, year = 2092, month = 1)
+
+    mockMvc
+      .perform(delete("/api/categories/{id}", categoryId))
+      .andExpect(status().isBadRequest)
+      .andExpect(jsonPath("$.message").value("使用中のカテゴリは削除できません"))
+
+    assertTrue(categoryRepository.existsById(categoryId))
+    assertTrue(categoryBudgetRepository.existsByCategoryId(categoryId))
+  }
+
+  @Test
+  fun budgetedCategoryCannotChangeType() {
+    val category = saveExpenseCategory("予算設定済み種別変更不可テスト", 903)
+    val categoryId = category.id ?: error("Category id is not assigned")
+    saveCategoryBudget(categoryId, year = 2092, month = 2)
+
+    mockMvc
+      .perform(
+        put("/api/categories/{id}", categoryId)
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(
+            """
+            {
+              "name": "予算設定済み種別変更不可テスト",
+              "type": "INCOME",
+              "displayOrder": 903
+            }
+            """
+              .trimIndent()
+          )
+      )
+      .andExpect(status().isBadRequest)
+      .andExpect(jsonPath("$.message").value("使用中のカテゴリは種別を変更できません"))
+
+    assertEquals(
+      TransactionType.EXPENSE,
+      categoryRepository.findById(categoryId).orElseThrow().type,
+    )
+    assertTrue(categoryBudgetRepository.existsByCategoryId(categoryId))
+  }
+
+  @Test
   fun lastCategoryInTypeCannotBeDeleted() {
     val expenseCategories =
       categoryRepository.findAll().filter { it.type == TransactionType.EXPENSE }
@@ -279,5 +329,34 @@ class CategoryApiTests {
       .andExpect(jsonPath("$.message").value("各種別のカテゴリは最低1件必要です"))
 
     assertTrue(categoryRepository.existsById(categoryId))
+  }
+
+  private fun saveExpenseCategory(name: String, displayOrder: Int): CategoryEntity =
+    categoryRepository.saveAndFlush(
+      CategoryEntity(
+        name = name,
+        type = TransactionType.EXPENSE,
+        displayOrder = displayOrder,
+      )
+    )
+
+  private fun saveCategoryBudget(categoryId: Long, year: Int, month: Int) {
+    mockMvc
+      .perform(
+        put("/api/budgets/monthly")
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(
+            """
+            {
+              "year": $year,
+              "month": $month,
+              "overallBudget": null,
+              "categoryBudgets": [{"categoryId": $categoryId, "amount": 1000}]
+            }
+            """
+              .trimIndent()
+          )
+      )
+      .andExpect(status().isOk)
   }
 }

@@ -151,8 +151,17 @@ class TransactionApiTests {
       .andExpect(status().isCreated)
       .andExpect(jsonPath("$.date").value("2026-07-02"))
       .andExpect(jsonPath("$.amount").value(1000))
+      .andExpect(jsonPath("$.displayOrder").value(11))
 
     val created = transactionRepository.findAll().single { it.memo == "新規データ" }
+    val independentlyAdded =
+      saveTransaction(
+        category = category,
+        transactionDate = LocalDate.of(2026, 7, 4),
+        amount = 700,
+        memo = "個別登録後に追加されたデータ",
+        displayOrder = 21,
+      )
 
     mockMvc
       .perform(
@@ -177,6 +186,7 @@ class TransactionApiTests {
       .andExpect(status().isOk)
       .andExpect(jsonPath("$.id").value(created.requiredId().toInt()))
       .andExpect(jsonPath("$.amount").value(1200))
+      .andExpect(jsonPath("$.displayOrder").value(11))
 
     val monthlyRows =
       transactionRepository
@@ -185,10 +195,14 @@ class TransactionApiTests {
           LocalDate.of(2026, 8, 1),
         )
     assertEquals(
-      setOf(existing.requiredId(), created.requiredId()),
+      setOf(existing.requiredId(), created.requiredId(), independentlyAdded.requiredId()),
       monthlyRows.map { it.requiredId() }.toSet(),
     )
     assertEquals("既存データ", monthlyRows.single { it.requiredId() == existing.requiredId() }.memo)
+    assertEquals(
+      "個別登録後に追加されたデータ",
+      monthlyRows.single { it.requiredId() == independentlyAdded.requiredId() }.memo,
+    )
 
     mockMvc
       .perform(
@@ -201,8 +215,9 @@ class TransactionApiTests {
     mockMvc
       .perform(get("/api/transactions").param("year", "2026").param("month", "7"))
       .andExpect(status().isOk)
-      .andExpect(jsonPath("$", hasSize<Int>(1)))
+      .andExpect(jsonPath("$", hasSize<Int>(2)))
       .andExpect(jsonPath("$[0].id").value(existing.requiredId().toInt()))
+      .andExpect(jsonPath("$[1].id").value(independentlyAdded.requiredId().toInt()))
   }
 
   @Test
