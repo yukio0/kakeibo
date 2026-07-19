@@ -26,7 +26,6 @@ html {
 
 body {
   margin: 0;
-  min-width: 320px;
   min-height: 100vh;
 }
 
@@ -80,8 +79,10 @@ button:disabled {
 }
 
 .app-title {
+  flex: none;
   font-size: 1.25rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .app-header-actions {
@@ -95,7 +96,7 @@ button:disabled {
   gap: 1rem;
 }
 
-/* ハンバーガー・ドロワー関連は既定で非表示。狭幅(≤768px)でのみ有効化する。 */
+/* ハンバーガー・ドロワー関連は既定で非表示。ナビが1行に収まらない幅で有効化する。 */
 .nav-toggle {
   display: none;
   align-items: center;
@@ -127,6 +128,10 @@ button:disabled {
   font-weight: 600;
 }
 
+.app-nav a {
+  white-space: nowrap;
+}
+
 .app-user-actions {
   display: flex;
   align-items: center;
@@ -134,9 +139,13 @@ button:disabled {
 }
 
 .app-user-name {
+  max-width: 12rem;
+  overflow: hidden;
   color: #475569;
   font-size: 0.9rem;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .logout-button {
@@ -219,6 +228,7 @@ button:disabled {
 
 .trusted-device-table {
   width: 100%;
+  min-width: 720px;
   border-collapse: collapse;
 }
 
@@ -244,6 +254,8 @@ button:disabled {
   color: #047857;
   font-size: 0.75rem;
   font-weight: 700;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .hero-section {
@@ -317,6 +329,10 @@ button:disabled {
 
 .form-grid-compact {
   grid-template-columns: minmax(220px, 1fr) minmax(140px, 0.4fr) auto;
+}
+
+.csv-period-form {
+  grid-template-columns: repeat(2, minmax(180px, 1fr)) auto;
 }
 
 .csv-export-option {
@@ -543,8 +559,11 @@ textarea:focus {
   font-weight: 600;
 }
 
-.recurring-entry-link {
-  align-self: center;
+.month-toolbar .text-link {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  align-self: flex-end;
 }
 
 .summary-grid {
@@ -687,7 +706,7 @@ textarea:focus {
   border-color: #e2e8f0;
 }
 
-.table-actions-cell {
+.table-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
@@ -788,6 +807,7 @@ textarea:focus {
 
 .entry-line {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
@@ -795,6 +815,7 @@ textarea:focus {
 
 .entry-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 0.5rem;
 }
@@ -814,8 +835,10 @@ textarea:focus {
 }
 
 .entry-amount {
+  margin-left: auto;
   font-size: 1.1rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .entry-detail {
@@ -927,8 +950,8 @@ textarea:focus {
   }
 }
 
-/* モバイルのグローバルナビ: ハンバーガー + 右スライドのドロワー */
-@media (max-width: 768px) {
+/* グローバルナビ: 1行に収まらない幅ではハンバーガー + 右スライドのドロワー */
+@media (max-width: 1239px) {
   .nav-toggle {
     display: inline-flex;
   }
@@ -1009,8 +1032,23 @@ textarea:focus {
     border-top: 1px solid #e5e7eb;
   }
 
+  .app-user-name {
+    max-width: 100%;
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
   .logout-button {
     width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .category-create-form,
+  .csv-period-form {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1031,6 +1069,39 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
+  .transaction-month-toolbar,
+  .summary-month-toolbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.75rem 0.5rem;
+  }
+
+  .transaction-month-toolbar .month-picker,
+  .summary-month-toolbar .month-picker {
+    min-width: 0;
+  }
+
+  .transaction-month-toolbar .recurring-entry-link {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .recurring-month-toolbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.75rem 0.5rem;
+  }
+
+  .recurring-month-toolbar .month-picker {
+    grid-column: 1 / -1;
+    min-width: 0;
+    max-width: 180px;
+  }
+
+  .recurring-month-toolbar .recurring-home-link {
+    justify-self: start;
+  }
+
   .toolbar {
     justify-content: flex-start;
   }
@@ -1046,6 +1117,34 @@ textarea:focus {
   .transaction-toolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .transaction-month-toolbar,
+  .summary-month-toolbar,
+  .recurring-month-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .transaction-month-toolbar > *,
+  .summary-month-toolbar > *,
+  .recurring-month-toolbar > * {
+    grid-column: 1;
+    justify-self: start;
+  }
+
+  .transaction-month-toolbar .month-picker,
+  .summary-month-toolbar .month-picker,
+  .recurring-month-toolbar .month-picker {
+    width: 100%;
+    max-width: none;
   }
 }
 
@@ -1361,6 +1460,10 @@ textarea:focus {
   padding: 0.85rem;
   border-top: 1px solid #e5e7eb;
   text-align: left;
+  vertical-align: middle;
+}
+
+.budget-table tbody td {
   vertical-align: middle;
 }
 

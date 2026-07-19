@@ -633,7 +633,7 @@ function removeId(target: typeof updatingIds, id: number): void {
       <h2 id="recurring-register-heading">登録内容を確認</h2>
     </div>
 
-    <div class="month-toolbar">
+    <div class="month-toolbar recurring-month-toolbar">
       <label class="month-picker">
         <span>対象月</span>
         <input
@@ -654,9 +654,8 @@ function removeId(target: typeof updatingIds, id: number): void {
       <RouterLink
         class="text-link recurring-home-link"
         :to="{ name: 'home', query: { month: monthInputValue } }"
+        >家計簿入力で確認</RouterLink
       >
-        家計簿入力で確認
-      </RouterLink>
     </div>
 
     <p class="summary-note">
@@ -1207,13 +1206,17 @@ function removeId(target: typeof updatingIds, id: number): void {
   border: 0;
 }
 
-.recurring-home-link {
-  align-self: center;
+.recurring-candidates-table {
+  min-width: 1440px;
 }
 
-.recurring-candidates-table,
 .recurring-template-table {
-  min-width: 1280px;
+  min-width: 1640px;
+}
+
+.recurring-candidates-table thead th,
+.recurring-template-table thead th {
+  white-space: nowrap;
 }
 
 .recurring-candidates-table th,
@@ -1221,6 +1224,57 @@ function removeId(target: typeof updatingIds, id: number): void {
 .recurring-template-table th,
 .recurring-template-table td {
   vertical-align: top;
+}
+
+.recurring-candidates-table tbody > tr > :is(:nth-child(1), :nth-child(2), :nth-child(9)),
+.recurring-template-table tbody > tr > :is(:nth-child(2), :nth-child(10)) {
+  vertical-align: middle;
+}
+
+.recurring-candidates-table
+  tbody
+  > tr
+  > td:not([colspan]):is(:nth-child(3), :nth-child(4), :nth-child(7), :nth-child(8))::before,
+.recurring-template-table
+  tbody
+  > tr
+  > td:not([colspan]):is(
+    :nth-child(1),
+    :nth-child(3),
+    :nth-child(4),
+    :nth-child(7),
+    :nth-child(8),
+    :nth-child(9)
+  )::before {
+  display: block;
+  height: 1rem;
+  margin-bottom: 0.3rem;
+  content: '';
+}
+
+.recurring-candidates-table :is(th, td):is(:nth-child(5), :nth-child(6)),
+.recurring-template-table :is(th, td):is(:nth-child(5), :nth-child(6)) {
+  min-width: 150px;
+}
+
+.recurring-template-table :is(th, td):nth-child(1) {
+  min-width: 180px;
+}
+
+.recurring-template-table :is(th, td):nth-child(4) {
+  min-width: 110px;
+}
+
+.recurring-template-table :is(th, td):nth-child(8) {
+  min-width: 220px;
+}
+
+.recurring-template-table :is(th, td):nth-child(9) {
+  min-width: 110px;
+}
+
+.recurring-template-table :is(th, td):nth-child(10) {
+  min-width: 160px;
 }
 
 .recurring-candidates-table textarea,
@@ -1241,10 +1295,12 @@ function removeId(target: typeof updatingIds, id: number): void {
 
 .recurring-cell-label {
   display: block;
+  min-height: 1rem;
   margin-bottom: 0.3rem;
   color: #64748b;
   font-size: 0.75rem;
   font-weight: 700;
+  line-height: 1rem;
 }
 
 .not-applicable {
@@ -1304,19 +1360,6 @@ function removeId(target: typeof updatingIds, id: number): void {
 
 .recurring-template-actions {
   flex-wrap: nowrap;
-}
-
-.recurring-template-table .action-cell {
-  position: sticky;
-  right: 0;
-  z-index: 1;
-  background: #ffffff;
-  box-shadow: -0.35rem 0 0.7rem rgb(15 23 42 / 8%);
-}
-
-.recurring-template-table thead .action-cell {
-  z-index: 2;
-  background: #f8fafc;
 }
 
 @media (max-width: 900px) {

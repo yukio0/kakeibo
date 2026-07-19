@@ -88,7 +88,9 @@ onBeforeUnmount(() => {
           </nav>
 
           <div v-if="authState.security?.authenticationEnabled" class="app-user-actions">
-            <span class="app-user-name">{{ authState.user.username }}</span>
+            <span class="app-user-name" :title="authState.user.username">{{
+              authState.user.username
+            }}</span>
             <button class="logout-button" type="button" @click="handleLogout">ログアウト</button>
           </div>
         </div>

@@ -46,6 +46,25 @@ test('信頼済み端末では2FA入力を省略する', async ({ page }, testIn
   await expect(page.getByRole('heading', { name: '家計簿入力', exact: true })).toBeVisible()
   await saveScreenshot(page, testInfo, 'trusted-device-login-complete')
 
+  await page.getByRole('link', { name: '信頼済み端末', exact: true }).click()
+  await expect(page.locator('.trusted-device-table')).toBeVisible()
+  await page.setViewportSize({ width: 390, height: 844 })
+  const trustedDeviceLayout = await page.locator('.trusted-device-table').evaluate((table) => {
+    const wrapper = table.parentElement
+    if (!wrapper) {
+      throw new Error('信頼済み端末テーブルのラッパーが見つかりません')
+    }
+    return {
+      bodyOverflows: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      wrapperScrolls: wrapper.scrollWidth > wrapper.clientWidth,
+    }
+  })
+  expect(trustedDeviceLayout.bodyOverflows).toBeFalsy()
+  expect(trustedDeviceLayout.wrapperScrolls).toBeTruthy()
+
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto('/')
+
   await page.getByRole('button', { name: 'ログアウト', exact: true }).click()
   await expect(page).toHaveURL(/\/login/)
 

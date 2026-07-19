@@ -454,7 +454,7 @@ function toRequestKey(request: MonthlyBudgetRequest): string {
   </section>
 
   <section class="status-card">
-    <div class="month-toolbar">
+    <div class="month-toolbar summary-month-toolbar">
       <button type="button" class="secondary-button" :disabled="loading" @click="moveMonth(-1)">
         前月
       </button>

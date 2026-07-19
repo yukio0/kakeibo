@@ -99,7 +99,7 @@ watch(() => createForm.type, refreshCreateDisplayOrder)
       <h2>カテゴリを追加</h2>
     </div>
 
-    <form class="form-grid" @submit.prevent="submitCreate">
+    <form class="form-grid category-create-form" @submit.prevent="submitCreate">
       <label class="field">
         <span>カテゴリ名</span>
         <input v-model="createForm.name" type="text" autocomplete="off" />

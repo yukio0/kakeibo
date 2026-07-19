@@ -169,7 +169,7 @@ function monthLabel(year: number, month: number): string {
           <h2>指定した期間のCSVを出力</h2>
           <p>開始日と終了日の両方を指定してください。</p>
         </div>
-        <form class="form-grid form-grid-compact" @submit.prevent="exportPeriod">
+        <form class="form-grid csv-period-form" @submit.prevent="exportPeriod">
           <label class="field">
             <span>開始日</span>
             <input v-model="startDate" type="date" required :disabled="exporting" />

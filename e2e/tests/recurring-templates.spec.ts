@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { loginThroughMfa, resetE2eData, saveScreenshot } from './support/test-support'
 
 type Master = {
@@ -38,6 +38,35 @@ function idOf(masters: Master[], name: string): number {
   }
   return master.id
 }
+
+async function expectBottomAligned(first: Locator, second: Locator): Promise<void> {
+  const [firstBox, secondBox] = await Promise.all([first.boundingBox(), second.boundingBox()])
+  if (!firstBox || !secondBox) {
+    throw new Error('比較対象の要素が表示されていません')
+  }
+
+  const firstBottom = firstBox.y + firstBox.height
+  const secondBottom = secondBox.y + secondBox.height
+  expect(Math.abs(firstBottom - secondBottom)).toBeLessThanOrEqual(1)
+}
+
+test('定期取引: 月操作リンクの文字と縦位置を揃える', async ({ page }) => {
+  await page.getByRole('link', { name: '定期取引', exact: true }).click()
+
+  const homeLink = page.getByRole('link', { name: '家計簿入力で確認', exact: true })
+  const recurringMonthInput = page.getByLabel('対象月', { exact: true })
+  await expect(homeLink).toBeVisible()
+  expect(await homeLink.textContent()).toBe('家計簿入力で確認')
+  await expectBottomAligned(recurringMonthInput, homeLink)
+
+  await homeLink.click()
+
+  const recurringLink = page.getByRole('link', { name: '定期取引から登録', exact: true })
+  const transactionMonthInput = page.getByLabel('対象月', { exact: true })
+  await expect(recurringLink).toBeVisible()
+  expect(await recurringLink.textContent()).toBe('定期取引から登録')
+  await expectBottomAligned(transactionMonthInput, recurringLink)
+})
 
 test('定期取引: 当月分を確認して既存取引を残したまま一括登録する', async ({ page }, testInfo) => {
   const headers = await csrfHeader(page)
@@ -115,6 +144,21 @@ test('定期取引: 当月分を確認して既存取引を残したまま一括
 
   const templateTable = page.locator('.recurring-template-table')
   const rentName = templateTable.getByRole('textbox', { name: '家賃のテンプレート名' })
+  const firstTemplateRow = templateTable.locator('tbody tr').first()
+  const [displayOrderCell, actionCell] = [
+    firstTemplateRow.locator('td').nth(8),
+    firstTemplateRow.locator('td').nth(9),
+  ]
+  const [displayOrderBox, actionBox] = await Promise.all([
+    displayOrderCell.boundingBox(),
+    actionCell.boundingBox(),
+  ])
+  if (!displayOrderBox || !actionBox) {
+    throw new Error('定期取引テンプレートの比較対象セルが表示されていません')
+  }
+  expect(displayOrderBox.x + displayOrderBox.width).toBeLessThanOrEqual(actionBox.x + 1)
+  await expect(actionCell).toHaveCSS('position', 'static')
+
   await rentName.fill('家賃（編集中）')
   await templateTable
     .locator('tbody tr')
@@ -132,7 +176,17 @@ test('定期取引: 当月分を確認して既存取引を残したまま一括
   await expect(page.getByRole('checkbox', { name: '家賃を登録' })).toBeChecked()
 
   const rentRow = candidates.locator('tbody tr').filter({ hasText: '家賃' })
-  await expect(rentRow.locator('input[type="date"]')).toHaveValue('2026-02-28')
+  const rentDate = rentRow.locator('input[type="date"]')
+  const rentCategory = rentRow.locator('td').nth(4).locator('select')
+  await expect(rentDate).toHaveValue('2026-02-28')
+  const [rentDateBox, rentCategoryBox] = await Promise.all([
+    rentDate.boundingBox(),
+    rentCategory.boundingBox(),
+  ])
+  if (!rentDateBox || !rentCategoryBox) {
+    throw new Error('定期取引候補の比較対象入力欄が表示されていません')
+  }
+  expect(Math.abs(rentDateBox.y - rentCategoryBox.y)).toBeLessThanOrEqual(1)
 
   const utilityRow = candidates.locator('tbody tr').filter({ hasText: '光熱費' })
   await utilityRow.getByRole('spinbutton').fill('12345')

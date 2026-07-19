@@ -111,36 +111,38 @@ function toMessage(error: unknown, fallback: string): string {
 
         <p v-if="trustedDevices.length === 0" class="empty-message">信頼済み端末はありません。</p>
 
-        <table v-else class="trusted-device-table">
-          <thead>
-            <tr>
-              <th>端末</th>
-              <th>最終使用</th>
-              <th>有効期限</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="device in trustedDevices" :key="device.id">
-              <td>
-                <span>{{ device.deviceName }}</span>
-                <span v-if="device.current" class="current-device-badge">現在の端末</span>
-              </td>
-              <td>{{ formatDateTime(device.lastUsedAt) }}</td>
-              <td>{{ formatDateTime(device.expiresAt) }}</td>
-              <td>
-                <button
-                  type="button"
-                  class="danger-button"
-                  :disabled="processing"
-                  @click="revokeDevice(device)"
-                >
-                  解除
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div v-else class="table-wrap">
+          <table class="trusted-device-table">
+            <thead>
+              <tr>
+                <th>端末</th>
+                <th>最終使用</th>
+                <th>有効期限</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="device in trustedDevices" :key="device.id">
+                <td>
+                  <span>{{ device.deviceName }}</span>
+                  <span v-if="device.current" class="current-device-badge">現在の端末</span>
+                </td>
+                <td>{{ formatDateTime(device.lastUsedAt) }}</td>
+                <td>{{ formatDateTime(device.expiresAt) }}</td>
+                <td>
+                  <button
+                    type="button"
+                    class="danger-button"
+                    :disabled="processing"
+                    @click="revokeDevice(device)"
+                  >
+                    解除
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </template>
 
       <p v-if="errorMessage" class="message error">{{ errorMessage }}</p>

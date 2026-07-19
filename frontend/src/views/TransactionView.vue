@@ -720,7 +720,7 @@ async function deleteFromSheet(): Promise<void> {
   </section>
 
   <section class="status-card">
-    <div class="month-toolbar">
+    <div class="month-toolbar transaction-month-toolbar">
       <button
         type="button"
         class="secondary-button"
@@ -759,9 +759,8 @@ async function deleteFromSheet(): Promise<void> {
           class="text-link recurring-entry-link"
           :href="href"
           @click="handleRecurringLinkClick($event, navigate)"
+          >定期取引から登録</a
         >
-          定期取引から登録
-        </a>
       </RouterLink>
     </div>
 
@@ -891,9 +890,11 @@ async function deleteFromSheet(): Promise<void> {
               @field-focus="activeType = newRow.type"
             />
             <td class="table-actions-cell">
-              <button type="button" :disabled="loading || saving" @click="registerNewRow">
-                {{ saving ? '登録中...' : '登録' }}
-              </button>
+              <div class="table-actions">
+                <button type="button" :disabled="loading || saving" @click="registerNewRow">
+                  {{ saving ? '登録中...' : '登録' }}
+                </button>
+              </div>
             </td>
           </tr>
           <tr v-if="!loading && sortedRows.length === 0">
@@ -919,33 +920,35 @@ async function deleteFromSheet(): Promise<void> {
               @field-focus="activeType = row.type"
             />
             <td class="table-actions-cell">
-              <small v-if="rowErrors[row.localKey]?.id" class="field-error">{{
-                rowErrors[row.localKey]?.id
-              }}</small>
-              <span v-if="isRowDirty(row)" class="unsaved-badge">未保存</span>
-              <button
-                type="button"
-                :disabled="loading || saving || !isRowDirty(row)"
-                @click="updateRow(row)"
-              >
-                {{ saving ? '更新中...' : '更新' }}
-              </button>
-              <button
-                type="button"
-                class="secondary-button"
-                :disabled="loading || saving"
-                @click="copyRow(row)"
-              >
-                コピー
-              </button>
-              <button
-                type="button"
-                class="danger-button"
-                :disabled="loading || saving"
-                @click="deleteRow(row)"
-              >
-                削除
-              </button>
+              <div class="table-actions">
+                <small v-if="rowErrors[row.localKey]?.id" class="field-error">{{
+                  rowErrors[row.localKey]?.id
+                }}</small>
+                <span v-if="isRowDirty(row)" class="unsaved-badge">未保存</span>
+                <button
+                  type="button"
+                  :disabled="loading || saving || !isRowDirty(row)"
+                  @click="updateRow(row)"
+                >
+                  {{ saving ? '更新中...' : '更新' }}
+                </button>
+                <button
+                  type="button"
+                  class="secondary-button"
+                  :disabled="loading || saving"
+                  @click="copyRow(row)"
+                >
+                  コピー
+                </button>
+                <button
+                  type="button"
+                  class="danger-button"
+                  :disabled="loading || saving"
+                  @click="deleteRow(row)"
+                >
+                  削除
+                </button>
+              </div>
             </td>
           </tr>
         </tbody>
