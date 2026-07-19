@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.forwardedUrl
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.header
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -148,6 +149,14 @@ class AuthApiTests {
   @Test
   fun protectedApiRequiresAuthentication() {
     mockMvc.perform(get("/api/categories")).andExpect(status().isUnauthorized)
+  }
+
+  @Test
+  fun recurringTemplatePageForwardsToSpaWithoutAuthentication() {
+    mockMvc
+      .perform(get("/recurring-templates"))
+      .andExpect(status().isOk)
+      .andExpect(forwardedUrl("/index.html"))
   }
 
   @Test

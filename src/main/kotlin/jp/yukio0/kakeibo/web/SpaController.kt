@@ -12,6 +12,7 @@ class SpaController {
         "/",
         "/login",
         "/mfa/verify",
+        "/recurring-templates",
         "/categories",
         "/csv-export",
         "/summary",

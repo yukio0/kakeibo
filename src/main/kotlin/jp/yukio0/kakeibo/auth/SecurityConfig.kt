@@ -72,6 +72,7 @@ class SecurityConfig(
             "/index.html",
             "/login",
             "/mfa/verify",
+            "/recurring-templates",
             "/categories",
             "/csv-export",
             "/summary",

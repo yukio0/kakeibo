@@ -27,6 +27,16 @@ test('2FAを完了して家計簿画面を表示する', async ({ page }, testIn
   await saveScreenshot(page, testInfo, 'authenticated-home')
 })
 
+test('セッション切れ後の画面遷移でログイン画面を表示する', async ({ page }) => {
+  await loginThroughMfa(page)
+  await page.context().clearCookies()
+
+  await page.getByRole('link', { name: '集計', exact: true }).click()
+
+  await expect(page).toHaveURL(/\/login\?redirect=\/summary$/)
+  await expect(page.getByRole('heading', { name: 'ログイン', exact: true })).toBeVisible()
+})
+
 test('信頼済み端末では2FA入力を省略する', async ({ page }, testInfo) => {
   await page.goto('/login')
   await page.getByLabel('ユーザー名').fill(E2E_USER.username)

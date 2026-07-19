@@ -24,6 +24,14 @@ export const authState = reactive<{
 export async function loadCurrentUser(): Promise<AuthUser | null> {
   try {
     authState.security = await getSecuritySettings()
+    return await refreshCurrentUser()
+  } finally {
+    authState.loaded = true
+  }
+}
+
+export async function refreshCurrentUser(): Promise<AuthUser | null> {
+  try {
     authState.user = await getCurrentUser()
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
@@ -31,10 +39,7 @@ export async function loadCurrentUser(): Promise<AuthUser | null> {
     } else {
       throw error
     }
-  } finally {
-    authState.loaded = true
   }
-
   return authState.user
 }
 

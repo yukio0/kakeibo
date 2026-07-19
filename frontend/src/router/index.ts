@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { authState, loadCurrentUser } from '@/auth'
+import { authState, loadCurrentUser, refreshCurrentUser } from '@/auth'
 import CategoryView from '@/views/CategoryView.vue'
 import CsvExportView from '@/views/CsvExportView.vue'
 import LoginView from '@/views/LoginView.vue'
@@ -94,6 +94,8 @@ export const router = createRouter({
 router.beforeEach(async (to) => {
   if (!authState.loaded) {
     await loadCurrentUser()
+  } else if (authState.security?.authenticationEnabled !== false) {
+    await refreshCurrentUser()
   }
 
   if (
