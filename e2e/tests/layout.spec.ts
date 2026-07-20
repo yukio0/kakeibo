@@ -145,6 +145,7 @@ test('家計簿の操作セルとモバイル表示が大きな金額でも崩�
           left: inputRect.left,
           right: inputRect.right,
           bottom: inputRect.bottom,
+          width: inputRect.width,
         },
         previousButton: {
           top: previousButtonRect.top,
@@ -162,6 +163,7 @@ test('家計簿の操作セルとモバイル表示が大きな金額でも崩�
     })
     expect(toolbarLayout.input.left).toBeGreaterThanOrEqual(toolbarLayout.toolbar.left - 1)
     expect(toolbarLayout.input.right).toBeLessThanOrEqual(toolbarLayout.toolbar.right + 1)
+    expect(toolbarLayout.input.width).toBeLessThanOrEqual(177)
     expect(toolbarLayout.input.bottom).toBeLessThanOrEqual(toolbarLayout.previousButton.top + 1)
     expect(toolbarLayout.input.bottom).toBeLessThanOrEqual(toolbarLayout.nextButton.top + 1)
     expect(

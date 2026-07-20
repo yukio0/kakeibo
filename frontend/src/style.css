@@ -1128,8 +1128,17 @@ textarea:focus {
   .transaction-month-toolbar .month-picker {
     grid-column: 1 / -1;
     grid-row: 1;
+    width: 11rem;
+    max-width: 100%;
+    justify-self: start;
+  }
+
+  .transaction-month-toolbar .month-picker input[type='month'] {
+    display: block;
     width: 100%;
-    max-width: none;
+    min-width: 0;
+    max-width: 100%;
+    padding-inline: 0.5rem;
   }
 
   .transaction-month-toolbar > button:first-of-type {
