@@ -28,13 +28,13 @@ class TransactionImportService(
 
   @Transactional
   fun import(bytes: ByteArray, commit: Boolean): TransactionImportResult {
-    val records = parseCsv(decode(bytes))
+    val records = TransactionCsvCodec.decode(bytes)
     if (records.isEmpty()) {
       return failure(0, TransactionImportError(0, "CSVが空です"))
     }
 
     val header = records.first().map { it.trim() }
-    if (header != EXPECTED_HEADER) {
+    if (header != TransactionCsvCodec.HEADER) {
       return failure(
         0,
         TransactionImportError(0, "ヘッダ行が想定と異なります。エクスポート形式のCSVを取り込んでください"),
@@ -51,13 +51,13 @@ class TransactionImportService(
 
     dataRecords.forEachIndexed { index, rawRow ->
       val rowNumber = index + 1
-      val row = rawRow.map { denormalize(it.trim()) }
-      if (row.size != EXPECTED_HEADER.size) {
+      val row = rawRow.map(TransactionCsvCodec::normalizeImportedCell)
+      if (row.size != TransactionCsvCodec.HEADER.size) {
         errors.add(TransactionImportError(rowNumber, "列数が正しくありません（6列必要です）"))
         return@forEachIndexed
       }
 
-      val type = parseType(row[1])
+      val type = TransactionCsvCodec.parseType(row[1])
       if (type == null) {
         errors.add(TransactionImportError(rowNumber, "種別は「支出」「収入」「振替」のいずれかです"))
         return@forEachIndexed
@@ -196,92 +196,8 @@ class TransactionImportService(
       errors = listOf(error),
     )
 
-  private fun decode(bytes: ByteArray): String = String(bytes, Charsets.UTF_8).removePrefix("﻿")
-
-  private fun parseType(value: String): TransactionType? =
-    when (value) {
-      "支出" -> TransactionType.EXPENSE
-      "収入" -> TransactionType.INCOME
-      "振替" -> TransactionType.TRANSFER
-      else -> null
-    }
-
   private fun parseDate(value: String): LocalDate? =
     runCatching { LocalDate.parse(value) }.getOrNull()
 
   private fun parseAmount(value: String): Int? = value.replace(",", "").toIntOrNull()
-
-  /** エクスポート時のCSVインジェクション無害化（先頭に `'`）を元に戻す。 */
-  private fun denormalize(value: String): String =
-    if (value.length >= 2 && value[0] == '\'' && value[1] in FORMULA_TRIGGER_CHARS) {
-      value.substring(1)
-    } else {
-      value
-    }
-
-  private fun parseCsv(content: String): List<List<String>> {
-    val records = mutableListOf<List<String>>()
-    var record = mutableListOf<String>()
-    val field = StringBuilder()
-    var inQuotes = false
-    var index = 0
-
-    fun endField() {
-      record.add(field.toString())
-      field.setLength(0)
-    }
-
-    fun endRecord() {
-      endField()
-      records.add(record)
-      record = mutableListOf()
-    }
-
-    while (index < content.length) {
-      val character = content[index]
-      if (inQuotes) {
-        if (character == '"') {
-          if (index + 1 < content.length && content[index + 1] == '"') {
-            field.append('"')
-            index += 2
-          } else {
-            inQuotes = false
-            index += 1
-          }
-        } else {
-          field.append(character)
-          index += 1
-        }
-      } else {
-        when (character) {
-          '"' -> {
-            inQuotes = true
-            index += 1
-          }
-          ',' -> {
-            endField()
-            index += 1
-          }
-          '\r' -> index += 1
-          '\n' -> {
-            endRecord()
-            index += 1
-          }
-          else -> {
-            field.append(character)
-            index += 1
-          }
-        }
-      }
-    }
-    if (field.isNotEmpty() || record.isNotEmpty()) {
-      endRecord()
-    }
-    return records
-  }
-
-  private companion object {
-    val EXPECTED_HEADER = listOf("日付", "種別", "カテゴリ・振替元", "支払い方法・振替先", "金額", "メモ")
-    val FORMULA_TRIGGER_CHARS = setOf('=', '+', '-', '@', '\t', '\r')
-  }
 }

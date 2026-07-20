@@ -6,6 +6,8 @@ import jp.yukio0.kakeibo.api.ApiValidationException
 import jp.yukio0.kakeibo.api.ResourceNotFoundException
 import jp.yukio0.kakeibo.category.CategoryEntity
 import jp.yukio0.kakeibo.category.CategoryRepository
+import jp.yukio0.kakeibo.domain.TransactionTargetIds
+import jp.yukio0.kakeibo.domain.TransactionTargetRules
 import jp.yukio0.kakeibo.domain.TransactionType
 import jp.yukio0.kakeibo.paymentmethod.PaymentMethodEntity
 import jp.yukio0.kakeibo.paymentmethod.PaymentMethodRepository
@@ -237,83 +239,21 @@ class RecurringTransactionService(
     transferDestinationId: Long?,
     fieldPrefix: String,
   ): List<ApiFieldErrorResponse> =
-    when (type) {
-      TransactionType.EXPENSE ->
-        listOfNotNull(
-          requiredTargetError(fieldPrefix + "categoryId", categoryId, "カテゴリを選択してください"),
-          requiredTargetError(
-            fieldPrefix + "paymentMethodId",
-            paymentMethodId,
-            "支払い方法を選択してください",
-          ),
-          forbiddenTargetError(
-            fieldPrefix + "transferSourceId",
-            transferSourceId,
-            "支出では振替元を指定できません",
-          ),
-          forbiddenTargetError(
-            fieldPrefix + "transferDestinationId",
-            transferDestinationId,
-            "支出では振替先を指定できません",
-          ),
+    TransactionTargetRules.validate(
+        type,
+        TransactionTargetIds(
+          categoryId = categoryId,
+          paymentMethodId = paymentMethodId,
+          transferSourceId = transferSourceId,
+          transferDestinationId = transferDestinationId,
+        ),
+      )
+      .map { violation ->
+        ApiFieldErrorResponse(
+          field = fieldPrefix + violation.field.fieldName,
+          message = violation.message,
         )
-      TransactionType.INCOME ->
-        listOfNotNull(
-          requiredTargetError(fieldPrefix + "categoryId", categoryId, "カテゴリを選択してください"),
-          forbiddenTargetError(
-            fieldPrefix + "paymentMethodId",
-            paymentMethodId,
-            "収入では支払い方法を指定できません",
-          ),
-          forbiddenTargetError(
-            fieldPrefix + "transferSourceId",
-            transferSourceId,
-            "収入では振替元を指定できません",
-          ),
-          forbiddenTargetError(
-            fieldPrefix + "transferDestinationId",
-            transferDestinationId,
-            "収入では振替先を指定できません",
-          ),
-        )
-      TransactionType.TRANSFER ->
-        listOfNotNull(
-          forbiddenTargetError(
-            fieldPrefix + "categoryId",
-            categoryId,
-            "振替ではカテゴリを指定できません",
-          ),
-          forbiddenTargetError(
-            fieldPrefix + "paymentMethodId",
-            paymentMethodId,
-            "振替では支払い方法を指定できません",
-          ),
-          requiredTargetError(
-            fieldPrefix + "transferSourceId",
-            transferSourceId,
-            "振替元を選択してください",
-          ),
-          requiredTargetError(
-            fieldPrefix + "transferDestinationId",
-            transferDestinationId,
-            "振替先を選択してください",
-          ),
-        )
-    }
-
-  private fun requiredTargetError(
-    field: String,
-    value: Long?,
-    message: String,
-  ): ApiFieldErrorResponse? =
-    if (value == null) ApiFieldErrorResponse(field = field, message = message) else null
-
-  private fun forbiddenTargetError(
-    field: String,
-    value: Long?,
-    message: String,
-  ): ApiFieldErrorResponse? =
-    if (value != null) ApiFieldErrorResponse(field = field, message = message) else null
+      }
 
   private fun validateDuplicateTemplateIds(items: List<RecurringTransactionRegisterItem>) {
     val seen = mutableSetOf<Long>()
@@ -405,10 +345,16 @@ class RecurringTransactionService(
     type: TransactionType,
     field: String,
   ) {
-    if (category.type != type) {
+    if (!TransactionTargetRules.categoryMatches(type, category.type)) {
       throw ApiValidationException(
-        message = "種別に合うカテゴリを選択してください",
-        errors = listOf(ApiFieldErrorResponse(field = field, message = "種別に合うカテゴリを選択してください")),
+        message = TransactionTargetRules.CATEGORY_TYPE_MISMATCH_MESSAGE,
+        errors =
+          listOf(
+            ApiFieldErrorResponse(
+              field = field,
+              message = TransactionTargetRules.CATEGORY_TYPE_MISMATCH_MESSAGE,
+            )
+          ),
       )
     }
   }

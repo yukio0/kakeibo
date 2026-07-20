@@ -15,7 +15,6 @@ import {
   type MonthlySummary,
   type PaymentMethod,
   type Transaction,
-  type TransactionSaveRequest,
   type TransactionType,
   type TransferAccount,
 } from '@/api/kakeibo'
@@ -26,18 +25,19 @@ import {
   createEmptyRow,
   isBlankNewRow,
   isTransactionField,
-  toRequest,
+  toSaveRequest,
   toRow,
   type RowDefaults,
   type TransactionField,
   type TransactionFieldErrors,
   type TransactionRow,
 } from '@/transactions/rowModel'
-import { validateEntries, type ValidationContext } from '@/transactions/validation'
+import { validateTransaction, type ValidationContext } from '@/transactions/validation'
 import TransactionFields from '@/transactions/TransactionFields.vue'
 
 type SortField = 'date' | 'type' | 'category' | 'paymentMethod' | 'amount'
 type SortDirection = 'asc' | 'desc'
+type SaveErrorTarget = { kind: 'row'; row: TransactionRow } | { kind: 'draft' }
 
 const route = useRoute()
 const today = new Date()
@@ -83,7 +83,6 @@ const draft = reactive<TransactionRow>({
   paymentMethodId: '',
   amount: '',
   memo: '',
-  deleted: false,
 })
 const draftErrors = reactive<TransactionFieldErrors>({})
 
@@ -163,51 +162,25 @@ async function loadMonth(): Promise<void> {
 }
 
 async function registerNewRow(): Promise<void> {
-  if (loading.value || saving.value || !validateRow(newRow)) {
+  const errorTarget: SaveErrorTarget = { kind: 'row', row: newRow }
+  if (loading.value || saving.value || !validateForSave(newRow, errorTarget)) {
     return
   }
 
-  saving.value = true
-  saveError.value = null
-  try {
-    const saved = await createTransaction(period.year, period.month, toSaveRequest(newRow))
-    const created = toRow(saved)
-    rows.value = [...rows.value, created]
-    applySort()
-    captureSavedRow(created)
-    await refreshPersistedSummary()
+  const saved = await saveTransaction(newRow, null, errorTarget)
+  if (saved) {
     resetNewRow()
     await focusNewRowDate()
-  } catch (error) {
-    applySaveError(error, newRow)
-  } finally {
-    saving.value = false
   }
 }
 
 async function updateRow(row: TransactionRow): Promise<void> {
-  if (loading.value || saving.value || !isRowDirty(row) || !validateRow(row)) {
+  const errorTarget: SaveErrorTarget = { kind: 'row', row }
+  if (loading.value || saving.value || !isRowDirty(row) || !validateForSave(row, errorTarget)) {
     return
   }
 
-  saving.value = true
-  saveError.value = null
-  try {
-    const saved = await updateTransaction(
-      row.id ?? 0,
-      period.year,
-      period.month,
-      toSaveRequest(row),
-    )
-    applyTransaction(row, saved)
-    captureSavedRow(row)
-    applySort()
-    await refreshPersistedSummary()
-  } catch (error) {
-    applySaveError(error, row)
-  } finally {
-    saving.value = false
-  }
+  await saveTransaction(row, row, errorTarget)
 }
 
 async function deleteRow(row: TransactionRow): Promise<void> {
@@ -253,28 +226,51 @@ function validationContext(): ValidationContext {
   }
 }
 
-function validateRow(row: TransactionRow): boolean {
-  clearRowError(row)
-  const request = toRequest(row, 0)
-  const errors = validateEntries([{ row, request }], validationContext())[row.localKey]
-  if (!errors) {
+function validateForSave(row: TransactionRow, errorTarget: SaveErrorTarget): boolean {
+  clearSaveFieldErrors(errorTarget)
+  const errors = validateTransaction(toSaveRequest(row), validationContext())
+  if (Object.keys(errors).length === 0) {
     return true
   }
 
-  rowErrors[row.localKey] = errors
+  applyFieldErrors(errorTarget, errors)
   saveError.value = '入力内容に誤りがあります'
   return false
 }
 
-function toSaveRequest(row: TransactionRow): TransactionSaveRequest {
-  const request = toRequest(row, 0)
-  return {
-    date: request.date,
-    type: row.type,
-    categoryId: request.categoryId,
-    paymentMethodId: request.paymentMethodId,
-    amount: request.amount,
-    memo: request.memo,
+async function saveTransaction(
+  source: TransactionRow,
+  target: TransactionRow | null,
+  errorTarget: SaveErrorTarget,
+): Promise<TransactionRow | null> {
+  if (saving.value || (target && target.id === null)) {
+    return null
+  }
+
+  saving.value = true
+  saveError.value = null
+  try {
+    const saved = target
+      ? await updateTransaction(target.id!, period.year, period.month, toSaveRequest(source))
+      : await createTransaction(period.year, period.month, toSaveRequest(source))
+
+    const savedRow = target ?? toRow(saved)
+    if (target) {
+      applyTransaction(target, saved)
+    } else {
+      rows.value = [...rows.value, savedRow]
+    }
+
+    clearRowError(savedRow)
+    captureSavedRow(savedRow)
+    applySort()
+    await refreshPersistedSummary()
+    return savedRow
+  } catch (error) {
+    applySaveError(error, errorTarget)
+    return null
+  } finally {
+    saving.value = false
   }
 }
 
@@ -533,9 +529,9 @@ function captureSavedRow(row: TransactionRow): void {
   }
 }
 
-function applySaveError(error: unknown, row: TransactionRow): void {
+function applySaveError(error: unknown, errorTarget: SaveErrorTarget): void {
   if (error instanceof ApiError) {
-    applyApiErrors(error, row)
+    applyFieldErrors(errorTarget, apiFieldErrors(error))
   }
   saveError.value = toMessage(error)
 }
@@ -551,10 +547,27 @@ function apiFieldErrors(error: ApiError): TransactionFieldErrors {
   return result
 }
 
-function applyApiErrors(error: ApiError, row: TransactionRow): void {
-  rowErrors[row.localKey] = {
-    ...rowErrors[row.localKey],
-    ...apiFieldErrors(error),
+function applyFieldErrors(errorTarget: SaveErrorTarget, errors: TransactionFieldErrors): void {
+  if (Object.keys(errors).length === 0) {
+    return
+  }
+
+  if (errorTarget.kind === 'draft') {
+    Object.assign(draftErrors, errors)
+    return
+  }
+
+  rowErrors[errorTarget.row.localKey] = {
+    ...rowErrors[errorTarget.row.localKey],
+    ...errors,
+  }
+}
+
+function clearSaveFieldErrors(errorTarget: SaveErrorTarget): void {
+  if (errorTarget.kind === 'draft') {
+    clearDraftErrors()
+  } else {
+    clearRowError(errorTarget.row)
   }
 }
 
@@ -624,7 +637,6 @@ function resetDraft(source: TransactionRow | null): void {
   draft.paymentMethodId = base.paymentMethodId
   draft.amount = base.amount
   draft.memo = base.memo
-  draft.deleted = false
 }
 
 function openCreateSheet(): void {
@@ -656,48 +668,22 @@ function changeDraftType(): void {
 }
 
 async function submitSheet(): Promise<void> {
-  clearDraftErrors()
-  const request = toRequest(draft, 0)
-  const found = validateEntries([{ row: draft, request }], validationContext())[draft.localKey]
-  if (found) {
-    Object.assign(draftErrors, found)
-    return
-  }
-  if (saving.value) {
+  const errorTarget: SaveErrorTarget = { kind: 'draft' }
+  if (saving.value || !validateForSave(draft, errorTarget)) {
     return
   }
 
-  saving.value = true
-  saveError.value = null
-  try {
-    if (sheetMode.value === 'edit') {
-      const target = rows.value.find((row) => row.localKey === sheetRowKey.value)
-      if (!target || target.id === null) {
-        return
-      }
-      const saved = await updateTransaction(
-        target.id,
-        period.year,
-        period.month,
-        toSaveRequest(draft),
-      )
-      applyTransaction(target, saved)
-      captureSavedRow(target)
-    } else {
-      const saved = await createTransaction(period.year, period.month, toSaveRequest(draft))
-      const created = toRow(saved)
-      rows.value = [...rows.value, created]
-      captureSavedRow(created)
-    }
-    await refreshPersistedSummary()
+  const target =
+    sheetMode.value === 'edit'
+      ? (rows.value.find((row) => row.localKey === sheetRowKey.value) ?? null)
+      : null
+  if (sheetMode.value === 'edit' && (!target || target.id === null)) {
+    return
+  }
+
+  const saved = await saveTransaction(draft, target, errorTarget)
+  if (saved) {
     closeSheet()
-  } catch (error) {
-    if (error instanceof ApiError) {
-      Object.assign(draftErrors, apiFieldErrors(error))
-    }
-    saveError.value = toMessage(error)
-  } finally {
-    saving.value = false
   }
 }
 
@@ -875,7 +861,7 @@ async function deleteFromSheet(): Promise<void> {
         <tbody>
           <tr class="new-transaction-row">
             <TransactionFields
-              v-model="newRow"
+              :model-value="newRow"
               variant="row"
               mark-new-row
               :errors="rowErrors[newRow.localKey]"
@@ -1003,7 +989,7 @@ async function deleteFromSheet(): Promise<void> {
       </div>
       <div class="sheet-body">
         <TransactionFields
-          v-model="draft"
+          :model-value="draft"
           variant="card"
           :errors="draftErrors"
           :category-options="categoryOptions(draft)"

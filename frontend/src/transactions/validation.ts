@@ -1,6 +1,11 @@
-import type { Category, PaymentMethod, TransferAccount } from '@/api/kakeibo'
+import type {
+  Category,
+  PaymentMethod,
+  TransactionSaveRequest,
+  TransferAccount,
+} from '@/api/kakeibo'
 import { isValidDateString } from './dates'
-import type { SaveEntry, TransactionFieldErrors } from './rowModel'
+import type { TransactionFieldErrors } from './rowModel'
 
 export type ValidationContext = {
   categories: Category[]
@@ -11,68 +16,56 @@ export type ValidationContext = {
 }
 
 /**
- * 保存前に行ごとのセルへエラーを出すための、サーバ側の検証規則の先取り。
+ * 個別保存前にセルへエラーを出すための、サーバ側の検証規則の先取り。
  *
- * 自動保存は入力のたびに走るため、明らかに不正な内容をサーバへ投げないための門番でもある。
+ * 画面側で早めにエラーを示し、明らかに不正な内容をサーバへ投げないための門番でもある。
  * ここの規則はサーバの `TransactionService` と対になっていて、片方だけ変えると画面とAPIで挙動がずれる。
  *
- * @returns 行の `localKey` をキーにしたエラー。空なら妥当。
+ * @returns フィールドをキーにしたエラー。空なら妥当。
  */
-export function validateEntries(
-  entries: SaveEntry[],
+export function validateTransaction(
+  request: TransactionSaveRequest,
   context: ValidationContext,
-): Record<string, TransactionFieldErrors> {
-  const result: Record<string, TransactionFieldErrors> = {}
+): TransactionFieldErrors {
+  const errors: TransactionFieldErrors = {}
 
-  entries.forEach(({ row, request }) => {
-    const errors: TransactionFieldErrors = {}
+  if (!request.date) {
+    errors.date = '日付を入力してください'
+  } else if (!isValidDateString(request.date)) {
+    errors.date = '日付の形式が不正です'
+  } else if (request.date < context.monthStartDate || request.date > context.monthEndDate) {
+    errors.date = '対象月の日付を入力してください'
+  }
 
-    if (!request.date) {
-      errors.date = '日付を入力してください'
-    } else if (!isValidDateString(request.date)) {
-      errors.date = '日付の形式が不正です'
-    } else if (request.date < context.monthStartDate || request.date > context.monthEndDate) {
-      errors.date = '対象月の日付を入力してください'
-    }
+  const isTransfer = request.type === 'TRANSFER'
+  const categoryMessage = isTransfer
+    ? transferAccountError(request.categoryId, context, '振替元')
+    : categoryError(request.categoryId, request.type, context)
+  if (categoryMessage) {
+    errors.categoryId = categoryMessage
+  }
 
-    if (!request.type) {
-      errors.type = '種別を選択してください'
-    }
+  // 収入は支払い方法を持たないため検証しない。
+  const paymentMethodMessage = isTransfer
+    ? transferAccountError(request.paymentMethodId, context, '振替先')
+    : request.type === 'INCOME'
+      ? undefined
+      : paymentMethodError(request.paymentMethodId, context)
+  if (paymentMethodMessage) {
+    errors.paymentMethodId = paymentMethodMessage
+  }
 
-    const isTransfer = request.type === 'TRANSFER'
-    const categoryMessage = isTransfer
-      ? transferAccountError(request.categoryId, context, '振替元')
-      : categoryError(request.categoryId, request.type, context)
-    if (categoryMessage) {
-      errors.categoryId = categoryMessage
-    }
+  if (request.amount === null) {
+    errors.amount = '金額を入力してください'
+  } else if (!Number.isInteger(request.amount) || request.amount < 1) {
+    errors.amount = '金額は1以上の整数で入力してください'
+  }
 
-    // 収入は支払い方法を持たないため検証しない。
-    const paymentMethodMessage = isTransfer
-      ? transferAccountError(request.paymentMethodId, context, '振替先')
-      : request.type === 'INCOME'
-        ? undefined
-        : paymentMethodError(request.paymentMethodId, context)
-    if (paymentMethodMessage) {
-      errors.paymentMethodId = paymentMethodMessage
-    }
+  if ((request.memo?.length ?? 0) > 500) {
+    errors.memo = 'メモは500文字以内で入力してください'
+  }
 
-    if (request.amount === null) {
-      errors.amount = '金額を入力してください'
-    } else if (!Number.isInteger(request.amount) || request.amount < 1) {
-      errors.amount = '金額は1以上の整数で入力してください'
-    }
-
-    if ((request.memo?.length ?? 0) > 500) {
-      errors.memo = 'メモは500文字以内で入力してください'
-    }
-
-    if (Object.keys(errors).length > 0) {
-      result[row.localKey] = errors
-    }
-  })
-
-  return result
+  return errors
 }
 
 function transferAccountError(
@@ -91,7 +84,7 @@ function transferAccountError(
 
 function categoryError(
   id: number | null,
-  type: SaveEntry['request']['type'],
+  type: TransactionSaveRequest['type'],
   context: ValidationContext,
 ): string | undefined {
   if (id === null) {

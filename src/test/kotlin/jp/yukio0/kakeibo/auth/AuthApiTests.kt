@@ -1,6 +1,9 @@
 package jp.yukio0.kakeibo.auth
 
+import java.time.Instant
 import java.util.UUID
+import jp.yukio0.kakeibo.trusteddevice.TrustedDeviceEntity
+import jp.yukio0.kakeibo.trusteddevice.TrustedDeviceRepository
 import jp.yukio0.kakeibo.user.AppUserEntity
 import jp.yukio0.kakeibo.user.AppUserRepository
 import kotlin.test.assertNotEquals
@@ -8,6 +11,7 @@ import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.mock.web.MockHttpSession
 import org.springframework.security.crypto.password.PasswordEncoder
@@ -36,6 +40,8 @@ class AuthApiTests {
   @Autowired private lateinit var appUserRepository: AppUserRepository
 
   @Autowired private lateinit var passwordEncoder: PasswordEncoder
+
+  @Autowired private lateinit var trustedDeviceRepository: TrustedDeviceRepository
 
   private val mockMvc: MockMvc by lazy {
     MockMvcBuilders.webAppContextSetup(context)
@@ -195,8 +201,16 @@ class AuthApiTests {
   fun changePasswordUpdatesPasswordHashAndAllowsNewPassword() {
     val username = createTestUser(password = "old-password")
     val session = login(username = username, password = "old-password")
-    val oldPasswordHash =
-      appUserRepository.findByUsername(username)?.passwordHash ?: error("User is not found")
+    val appUser = appUserRepository.findByUsername(username) ?: error("User is not found")
+    val oldPasswordHash = appUser.passwordHash
+    trustedDeviceRepository.save(
+      TrustedDeviceEntity(
+        appUser = appUser,
+        tokenHash = "password-change-${UUID.randomUUID()}",
+        deviceName = "Password change test device",
+        expiresAt = Instant.now().plusSeconds(3600),
+      )
+    )
 
     mockMvc
       .perform(
@@ -213,11 +227,13 @@ class AuthApiTests {
           )
       )
       .andExpect(status().isNoContent)
+      .andExpect(header().exists(HttpHeaders.SET_COOKIE))
 
     val changedUser =
       appUserRepository.findByUsername(username) ?: error("Changed user is not found")
     assertNotEquals(oldPasswordHash, changedUser.passwordHash)
     assertTrue(changedUser.passwordHash.startsWith("\$2"))
+    assertTrue(trustedDeviceRepository.findAllByAppUserOrderByCreatedAtDesc(changedUser).isEmpty())
 
     mockMvc
       .perform(

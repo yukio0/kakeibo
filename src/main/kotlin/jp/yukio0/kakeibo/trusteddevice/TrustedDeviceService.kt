@@ -192,7 +192,8 @@ class TrustedDeviceService(
     response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString())
   }
 
-  private fun clearTrustedDeviceCookie(response: HttpServletResponse) {
+  /** DB側の失効処理が成功した後に、呼び出し側からブラウザのCookieだけを削除する。 */
+  fun clearTrustedDeviceCookie(response: HttpServletResponse) {
     writeTrustedDeviceCookie(
       response = response,
       value = "",

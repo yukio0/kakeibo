@@ -52,17 +52,6 @@ export type Transaction = {
   displayOrder: number
 }
 
-export type TransactionMonthlySaveRequest = {
-  id: number | null
-  date: string | null
-  type: TransactionType | null
-  categoryId: number | null
-  paymentMethodId: number | null
-  amount: number | null
-  memo: string | null
-  displayOrder: number
-}
-
 export type TransactionSaveRequest = {
   date: string | null
   type: TransactionType
@@ -559,18 +548,6 @@ export function exportTransactions(startDate?: string, endDate?: string): Promis
 
   return apiBlobRequest(`/api/transactions/export${query}`, {
     fallbackMessage: 'CSVの出力に失敗しました',
-  })
-}
-
-/** 保存後の家計簿データを、渡した `requests` と同じ並びで返す。 */
-export function saveMonthlyTransactions(
-  year: number,
-  month: number,
-  requests: TransactionMonthlySaveRequest[],
-): Promise<Transaction[]> {
-  return apiRequest<Transaction[]>(`/api/transactions/monthly?year=${year}&month=${month}`, {
-    method: 'PUT',
-    body: requests,
   })
 }
 

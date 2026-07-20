@@ -1,13 +1,15 @@
 package jp.yukio0.kakeibo.transaction
 
 import jakarta.validation.Validator
-import java.nio.charset.StandardCharsets
 import java.time.LocalDate
 import jp.yukio0.kakeibo.api.ApiFieldErrorResponse
 import jp.yukio0.kakeibo.api.ApiValidationException
 import jp.yukio0.kakeibo.api.ResourceNotFoundException
 import jp.yukio0.kakeibo.category.CategoryEntity
 import jp.yukio0.kakeibo.category.CategoryRepository
+import jp.yukio0.kakeibo.domain.TransactionTargetField
+import jp.yukio0.kakeibo.domain.TransactionTargetIds
+import jp.yukio0.kakeibo.domain.TransactionTargetRules
 import jp.yukio0.kakeibo.domain.TransactionType
 import jp.yukio0.kakeibo.paymentmethod.PaymentMethodEntity
 import jp.yukio0.kakeibo.paymentmethod.PaymentMethodRepository
@@ -38,27 +40,18 @@ class TransactionService(
     if (rows.isEmpty()) {
       return null
     }
-    val csv = buildString {
-      appendCsvRow(
-        this,
-        listOf("日付", "種別", "カテゴリ・振替元", "支払い方法・振替先", "金額", "メモ"),
-      )
-      rows.forEach { transaction ->
-        appendCsvRow(
-          this,
-          listOf(
-            transaction.date,
-            transaction.type.toCsvLabel(),
-            transaction.categoryName,
-            transaction.paymentMethodName.orEmpty(),
-            transaction.amount.toString(),
-            transaction.memo.orEmpty(),
-          ),
+    return TransactionCsvCodec.encode(
+      rows.map { transaction ->
+        TransactionCsvRecord(
+          date = transaction.date,
+          type = transaction.type,
+          categoryOrTransferSource = transaction.categoryName,
+          paymentMethodOrTransferDestination = transaction.paymentMethodName.orEmpty(),
+          amount = transaction.amount.toString(),
+          memo = transaction.memo.orEmpty(),
         )
       }
-    }
-
-    return csv.toByteArray(StandardCharsets.UTF_8)
+    )
   }
 
   @Transactional
@@ -86,25 +79,7 @@ class TransactionService(
     val commands = monthlyRequests.mapIndexed { index, request ->
       request.toCommand(index, monthlyPeriod)
     }
-    val categories =
-      findCategories(
-        commands.filterNot { it.type == TransactionType.TRANSFER }.map { it.categoryId }.toSet()
-      )
-    val paymentMethods =
-      findPaymentMethods(
-        commands
-          .filterNot { it.type == TransactionType.TRANSFER }
-          .mapNotNull { it.paymentMethodId }
-          .toSet()
-      )
-    val transferAccounts =
-      findTransferAccounts(
-        commands
-          .filter { it.type == TransactionType.TRANSFER }
-          .flatMap { listOfNotNull(it.categoryId, it.paymentMethodId) }
-          .toSet()
-      )
-    validateCategoryTypes(commands, categories)
+    val targets = resolveTargets(commands)
 
     return commands
       .map { command ->
@@ -114,7 +89,7 @@ class TransactionService(
             transactionDate = command.transactionDate,
             amount = command.amount,
           )
-        applyCommand(transaction, command, categories, paymentMethods, transferAccounts)
+        applyCommand(transaction, command, targets)
         transactionRepository.save(transaction)
       }
       .map { it.toResponse() }
@@ -159,25 +134,7 @@ class TransactionService(
       monthlyPeriod,
     )
 
-    val categories =
-      findCategories(
-        commands.filterNot { it.type == TransactionType.TRANSFER }.map { it.categoryId }.toSet()
-      )
-    val paymentMethods =
-      findPaymentMethods(
-        commands
-          .filterNot { it.type == TransactionType.TRANSFER }
-          .mapNotNull { it.paymentMethodId }
-          .toSet()
-      )
-    val transferAccounts =
-      findTransferAccounts(
-        commands
-          .filter { it.type == TransactionType.TRANSFER }
-          .flatMap { listOfNotNull(it.categoryId, it.paymentMethodId) }
-          .toSet()
-      )
-    validateCategoryTypes(commands, categories)
+    val targets = resolveTargets(commands)
 
     transactionRepository.deleteAll(
       monthlySnapshot.filter { it.requiredId() !in requestedExistingIds }
@@ -192,7 +149,7 @@ class TransactionService(
             amount = command.amount,
           )
 
-      applyCommand(transaction, command, categories, paymentMethods, transferAccounts)
+      applyCommand(transaction, command, targets)
 
       if (command.id == null) {
         transactionRepository.save(transaction)
@@ -207,20 +164,19 @@ class TransactionService(
   private fun applyCommand(
     transaction: TransactionEntity,
     command: TransactionMonthlySaveCommand,
-    categories: Map<Long, CategoryEntity>,
-    paymentMethods: Map<Long, PaymentMethodEntity>,
-    transferAccounts: Map<Long, TransferAccountEntity>,
+    targets: ResolvedTransactionTargets,
   ) {
     if (command.type == TransactionType.TRANSFER) {
       transaction.category = null
       transaction.paymentMethod = null
-      transaction.transferSource = transferAccounts.getValue(command.categoryId)
+      transaction.transferSource = targets.transferAccounts.getValue(command.categoryId)
       transaction.transferDestination =
-        transferAccounts.getValue(requireNotNull(command.paymentMethodId))
+        targets.transferAccounts.getValue(requireNotNull(command.paymentMethodId))
     } else {
-      transaction.category = categories.getValue(command.categoryId)
+      transaction.category = targets.categories.getValue(command.categoryId)
       // 収入は支払い方法を持たない(command.paymentMethodId が null)。
-      transaction.paymentMethod = command.paymentMethodId?.let { paymentMethods.getValue(it) }
+      transaction.paymentMethod =
+        command.paymentMethodId?.let { targets.paymentMethods.getValue(it) }
       transaction.transferSource = null
       transaction.transferDestination = null
     }
@@ -246,27 +202,7 @@ class TransactionService(
     validateBeanConstraints(listOf(saveRequest))
 
     val command = saveRequest.toCommand(index = 0, monthlyPeriod)
-    val categories =
-      findCategories(
-        if (command.type == TransactionType.TRANSFER) emptySet() else setOf(command.categoryId)
-      )
-    val paymentMethods =
-      findPaymentMethods(
-        if (command.type == TransactionType.TRANSFER) {
-          emptySet()
-        } else {
-          listOfNotNull(command.paymentMethodId).toSet()
-        }
-      )
-    val transferAccounts =
-      findTransferAccounts(
-        if (command.type == TransactionType.TRANSFER) {
-          listOfNotNull(command.categoryId, command.paymentMethodId).toSet()
-        } else {
-          emptySet()
-        }
-      )
-    validateCategoryTypes(listOf(command), categories)
+    val targets = resolveTargets(listOf(command))
 
     val transaction =
       existingTransaction
@@ -275,7 +211,7 @@ class TransactionService(
           transactionDate = command.transactionDate,
           amount = command.amount,
         )
-    applyCommand(transaction, command, categories, paymentMethods, transferAccounts)
+    applyCommand(transaction, command, targets)
 
     return transactionRepository.save(transaction).toResponse()
   }
@@ -311,40 +247,38 @@ class TransactionService(
   private fun TransactionMonthlySaveRequest.targetValidationErrors(
     index: Int
   ): List<ApiFieldErrorResponse> {
-    val categoryMessage =
-      if (type == TransactionType.TRANSFER) {
-        "振替元を選択してください"
+    val effectiveType = type ?: TransactionType.EXPENSE
+    val positiveCategoryId = categoryId?.takeIf { it > 0 }
+    val positivePaymentMethodId = paymentMethodId?.takeIf { it > 0 }
+    val targets =
+      if (effectiveType == TransactionType.TRANSFER) {
+        TransactionTargetIds(
+          transferSourceId = positiveCategoryId,
+          transferDestinationId = positivePaymentMethodId,
+        )
       } else {
-        "カテゴリを選択してください"
-      }
-    val paymentMethodMessage =
-      if (type == TransactionType.TRANSFER) {
-        "振替先を選択してください"
-      } else {
-        "支払い方法を選択してください"
+        TransactionTargetIds(
+          categoryId = positiveCategoryId,
+          // 従来どおり、収入で指定された支払い方法は検証せず保存時に無視する。
+          paymentMethodId =
+            if (effectiveType == TransactionType.INCOME) null else positivePaymentMethodId,
+        )
       }
 
-    return listOfNotNull(
-      targetValidationError(index, "categoryId", categoryId, categoryMessage),
-      // 収入は支払い方法を持たないため必須にしない。
-      if (type == TransactionType.INCOME) {
-        null
-      } else {
-        targetValidationError(index, "paymentMethodId", paymentMethodId, paymentMethodMessage)
-      },
-    )
+    return TransactionTargetRules.validate(effectiveType, targets).map { violation ->
+      ApiFieldErrorResponse(
+        field = rowField(index, violation.field.toTransactionRequestField()),
+        message = violation.message,
+      )
+    }
   }
 
-  private fun targetValidationError(
-    index: Int,
-    field: String,
-    value: Long?,
-    message: String,
-  ): ApiFieldErrorResponse? =
-    if (value == null || value <= 0) {
-      ApiFieldErrorResponse(field = rowField(index, field), message = message)
-    } else {
-      null
+  private fun TransactionTargetField.toTransactionRequestField(): String =
+    when (this) {
+      TransactionTargetField.CATEGORY,
+      TransactionTargetField.TRANSFER_SOURCE -> "categoryId"
+      TransactionTargetField.PAYMENT_METHOD,
+      TransactionTargetField.TRANSFER_DESTINATION -> "paymentMethodId"
     }
 
   private fun validateDuplicateIds(commands: List<TransactionMonthlySaveCommand>) {
@@ -427,6 +361,31 @@ class TransactionService(
     return transferAccounts
   }
 
+  private fun resolveTargets(
+    commands: List<TransactionMonthlySaveCommand>
+  ): ResolvedTransactionTargets {
+    val categories =
+      findCategories(
+        commands.filterNot { it.type == TransactionType.TRANSFER }.map { it.categoryId }.toSet()
+      )
+    val paymentMethods =
+      findPaymentMethods(
+        commands
+          .filterNot { it.type == TransactionType.TRANSFER }
+          .mapNotNull { it.paymentMethodId }
+          .toSet()
+      )
+    val transferAccounts =
+      findTransferAccounts(
+        commands
+          .filter { it.type == TransactionType.TRANSFER }
+          .flatMap { listOfNotNull(it.categoryId, it.paymentMethodId) }
+          .toSet()
+      )
+    validateCategoryTypes(commands, categories)
+    return ResolvedTransactionTargets(categories, paymentMethods, transferAccounts)
+  }
+
   private fun validateCategoryTypes(
     commands: List<TransactionMonthlySaveCommand>,
     categories: Map<Long, CategoryEntity>,
@@ -434,15 +393,20 @@ class TransactionService(
     val errors =
       commands
         .filterNot { it.type == TransactionType.TRANSFER }
-        .filter { categories.getValue(it.categoryId).type != it.type }
+        .filter {
+          !TransactionTargetRules.categoryMatches(
+            it.type,
+            categories.getValue(it.categoryId).type,
+          )
+        }
         .map {
           ApiFieldErrorResponse(
             field = rowField(it.index, "categoryId"),
-            message = "種別に合うカテゴリを選択してください",
+            message = TransactionTargetRules.CATEGORY_TYPE_MISMATCH_MESSAGE,
           )
         }
     if (errors.isNotEmpty()) {
-      throw ApiValidationException("種別に合うカテゴリを選択してください", errors)
+      throw ApiValidationException(TransactionTargetRules.CATEGORY_TYPE_MISMATCH_MESSAGE, errors)
     }
   }
 
@@ -605,32 +569,6 @@ class TransactionService(
         )
     }
 
-  private fun TransactionType.toCsvLabel(): String =
-    when (this) {
-      TransactionType.EXPENSE -> "支出"
-      TransactionType.INCOME -> "収入"
-      TransactionType.TRANSFER -> "振替"
-    }
-
-  private fun appendCsvRow(target: StringBuilder, values: List<String>) {
-    target.append(values.joinToString(",") { value -> "\"" + escapeCsvValue(value) + "\"" })
-    target.append("\r\n")
-  }
-
-  /**
-   * CSVインジェクション対策。=, +, -, @, タブ, CR で始まる値は表計算ソフトが数式として評価するため、 アポストロフィを前置して無効化する。あわせて " を ""
-   * にエスケープする。
-   */
-  private fun escapeCsvValue(value: String): String {
-    val neutralized =
-      if (value.isNotEmpty() && value.first() in FORMULA_TRIGGER_CHARS) {
-        "'$value"
-      } else {
-        value
-      }
-    return neutralized.replace("\"", "\"\"")
-  }
-
   private data class TransactionMonthlySaveCommand(
     val index: Int,
     val id: Long?,
@@ -644,9 +582,11 @@ class TransactionService(
     val displayOrder: Int,
   )
 
-  private fun rowField(index: Int, field: String): String = "[$index].$field"
+  private data class ResolvedTransactionTargets(
+    val categories: Map<Long, CategoryEntity>,
+    val paymentMethods: Map<Long, PaymentMethodEntity>,
+    val transferAccounts: Map<Long, TransferAccountEntity>,
+  )
 
-  private companion object {
-    val FORMULA_TRIGGER_CHARS = setOf('=', '+', '-', '@', '\t', '\r')
-  }
+  private fun rowField(index: Int, field: String): String = "[$index].$field"
 }

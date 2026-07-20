@@ -739,16 +739,6 @@ textarea:focus {
   white-space: nowrap;
 }
 
-.deleted-row {
-  background: #fff7f7;
-}
-
-.deleted-row input,
-.deleted-row select,
-.deleted-row textarea {
-  text-decoration: line-through;
-}
-
 /* スマホ用の明細リスト。既定は非表示にし、狭幅時にテーブルと排他で切り替える。 */
 .transaction-mobile {
   display: none;

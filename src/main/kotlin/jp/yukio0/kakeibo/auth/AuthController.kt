@@ -3,8 +3,6 @@ package jp.yukio0.kakeibo.auth
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import jakarta.validation.Valid
-import jp.yukio0.kakeibo.api.ApiFieldErrorResponse
-import jp.yukio0.kakeibo.api.ApiValidationException
 import jp.yukio0.kakeibo.api.BadRequestException
 import jp.yukio0.kakeibo.api.UnauthorizedException
 import jp.yukio0.kakeibo.trusteddevice.TrustedDeviceService
@@ -16,7 +14,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication
 import org.springframework.security.core.AuthenticationException
 import org.springframework.security.core.context.SecurityContextHolder
-import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.authentication.logout.SecurityContextLogoutHandler
 import org.springframework.security.web.context.SecurityContextRepository
 import org.springframework.security.web.csrf.CsrfToken
@@ -33,7 +30,7 @@ import org.springframework.web.bind.annotation.RestController
 class AuthController(
   private val authenticationManager: AuthenticationManager,
   private val appUserRepository: AppUserRepository,
-  private val passwordEncoder: PasswordEncoder,
+  private val accountSecurityService: AccountSecurityService,
   private val securityContextRepository: SecurityContextRepository,
   private val trustedDeviceService: TrustedDeviceService,
   private val securityFeatureProperties: SecurityFeatureProperties,
@@ -136,41 +133,10 @@ class AuthController(
       throw BadRequestException("ログイン認証が無効です")
     }
 
-    val appUser = authentication?.toAppUser() ?: throw UnauthorizedException("認証が必要です")
-
-    val errors = mutableListOf<ApiFieldErrorResponse>()
-    val currentPassword = request.currentPassword ?: ""
-    val newPassword = request.newPassword ?: ""
-    val newPasswordConfirm = request.newPasswordConfirm ?: ""
-
-    if (!passwordEncoder.matches(currentPassword, appUser.passwordHash)) {
-      errors.add(
-        ApiFieldErrorResponse(
-          field = "currentPassword",
-          message = "現在のパスワードが正しくありません",
-        )
-      )
-    }
-
-    if (newPassword != newPasswordConfirm) {
-      errors.add(
-        ApiFieldErrorResponse(
-          field = "newPasswordConfirm",
-          message = "新しいパスワードと確認用パスワードが一致しません",
-        )
-      )
-    }
-
-    if (errors.isNotEmpty()) {
-      throw ApiValidationException(
-        message = "入力内容に誤りがあります",
-        errors = errors,
-      )
-    }
-
-    appUser.passwordHash = passwordEncoder.encode(newPassword) ?: error("Password hash is empty")
-    appUserRepository.save(appUser)
-    trustedDeviceService.revokeAllTrustedDevices(appUser, httpResponse)
+    val username = authentication?.name ?: throw UnauthorizedException("認証が必要です")
+    accountSecurityService.changePassword(username, request)
+    // DBトランザクションが正常にコミットされた後で、ブラウザ側のCookieを削除する。
+    trustedDeviceService.clearTrustedDeviceCookie(httpResponse)
   }
 
   @GetMapping("/csrf")
