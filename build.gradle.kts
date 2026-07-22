@@ -121,6 +121,32 @@ tasks.named("check") {
   dependsOn("shellcheck", "shfmtCheck")
 }
 
+tasks.register("verifyAll") {
+  group = "verification"
+  description = "コードを整形し、静的解析・テスト・E2Eテストをまとめて実行します。"
+  dependsOn(
+    "spotlessApply",
+    "shfmtApply",
+    "check",
+    "e2eTest",
+  )
+}
+
+// verifyAll ではソースを整形してから検査し、E2Eテストを最後に実行する。
+tasks.named("shfmtApply") { mustRunAfter("spotlessApply") }
+
+tasks.named("spotlessCheck") { mustRunAfter("spotlessApply") }
+
+tasks.named("shfmtCheck") { mustRunAfter("shfmtApply") }
+
+tasks.named("shellcheck") { mustRunAfter("shfmtCheck") }
+
+tasks.named("compileKotlin") { mustRunAfter("spotlessApply") }
+
+tasks.named("processResources") { mustRunAfter("spotlessApply") }
+
+tasks.named("e2eTest") { mustRunAfter("check") }
+
 kotlin {
   compilerOptions {
     freeCompilerArgs.addAll("-Xjsr305=strict", "-Xannotation-default-target=param-property")
