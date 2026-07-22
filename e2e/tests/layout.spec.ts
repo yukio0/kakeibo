@@ -177,6 +177,14 @@ test('家計簿の操作セルとモバイル表示が大きな金額でも崩�
   }
 
   await page.setViewportSize({ width: 320, height: 844 })
+  const touchZoomPolicy = await page.locator('html').evaluate((root) => ({
+    touchAction: getComputedStyle(root).touchAction,
+    viewport: document.querySelector('meta[name="viewport"]')?.getAttribute('content') ?? '',
+  }))
+  expect(touchZoomPolicy.touchAction).toBe('manipulation')
+  expect(touchZoomPolicy.viewport).not.toContain('user-scalable=no')
+  expect(touchZoomPolicy.viewport).not.toContain('maximum-scale=1')
+
   const mobileLayout = await page
     .locator('.entry-item')
     .first()
