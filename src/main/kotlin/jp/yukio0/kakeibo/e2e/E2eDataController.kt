@@ -25,6 +25,7 @@ class E2eDataController(
   @ResponseStatus(HttpStatus.NO_CONTENT)
   @Transactional
   fun reset() {
+    jdbcTemplate.update("DELETE FROM mfa_recovery_codes")
     jdbcTemplate.update("DELETE FROM trusted_devices")
     jdbcTemplate.update("DELETE FROM recurring_transaction_registrations")
     jdbcTemplate.update("DELETE FROM recurring_transaction_templates")
@@ -42,13 +43,22 @@ class E2eDataController(
     insertTransferAccount("財布", 10)
     insertTransferAccount("銀行口座", 20)
 
-    appUserRepository.save(
-      AppUserEntity(
-        username = USERNAME,
-        passwordHash = passwordEncoder.encode(PASSWORD) ?: error("Password hash is empty"),
-        twoFactorEnabled = true,
-        twoFactorSecret = TOTP_SECRET,
+    val appUser =
+      appUserRepository.save(
+        AppUserEntity(
+          username = USERNAME,
+          passwordHash = passwordEncoder.encode(PASSWORD) ?: error("Password hash is empty"),
+          twoFactorEnabled = true,
+          twoFactorSecret = TOTP_SECRET,
+        )
       )
+
+    // リカバリーコードでのログインをE2Eで確認できるよう、既知のコードを1つだけ用意する
+    jdbcTemplate.update(
+      "INSERT INTO mfa_recovery_codes (app_user_id, code_hash) VALUES (?, ?)",
+      appUser.requiredId(),
+      passwordEncoder.encode(RECOVERY_CODE.replace("-", ""))
+        ?: error("Recovery code hash is empty"),
     )
   }
 
@@ -85,5 +95,6 @@ class E2eDataController(
     const val USERNAME = "e2e-user"
     const val PASSWORD = "e2e-password"
     const val TOTP_SECRET = "JBSWY3DPEHPK3PXP"
+    const val RECOVERY_CODE = "ABCDE-FGHJK"
   }
 }

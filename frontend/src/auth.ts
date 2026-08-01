@@ -8,6 +8,7 @@ import {
   verifyMfa as verifyMfaRequest,
   type AuthUser,
   type LoginResponse,
+  type MfaVerifyResult,
   type SecuritySettings,
 } from '@/api/kakeibo'
 
@@ -53,11 +54,14 @@ export async function login(username: string, password: string): Promise<LoginRe
   return response
 }
 
-export async function verifyMfa(code: string, trustDevice: boolean): Promise<AuthUser> {
-  const user = await verifyMfaRequest({ code, trustDevice })
-  authState.user = user
+export async function verifyMfa(code: string, trustDevice: boolean): Promise<MfaVerifyResult> {
+  const result = await verifyMfaRequest({ code, trustDevice })
+  authState.user = {
+    username: result.username,
+    twoFactorEnabled: result.twoFactorEnabled,
+  }
   authState.loaded = true
-  return user
+  return result
 }
 
 export async function logout(): Promise<void> {

@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ApiError } from '@/api/http'
 import {
   disableMfa,
   enableMfa,
+  getMfaRecoveryCodeStatus,
   getMfaStatus,
+  regenerateMfaRecoveryCodes,
   setupMfa,
+  type MfaRecoveryCodeStatus,
   type MfaSetup,
   type MfaStatus,
 } from '@/api/kakeibo'
 import { loadCurrentUser } from '@/auth'
 
+const route = useRoute()
+const router = useRouter()
 const status = ref<MfaStatus | null>(null)
 const setup = ref<MfaSetup | null>(null)
 const code = ref('')
@@ -19,6 +25,16 @@ const message = ref<string | null>(null)
 const errorMessage = ref<string | null>(null)
 const loading = ref(true)
 const processing = ref(false)
+const recoveryCodes = ref<string[] | null>(null)
+const recoveryCodeStatus = ref<MfaRecoveryCodeStatus | null>(null)
+
+// リカバリーコードでログインした直後は、残数とともに再設定を促す
+const recoveryLoginRemaining = computed(() => {
+  const value = route.query['recovery-used']
+  const raw = Array.isArray(value) ? value[0] : value
+  const remaining = Number(raw)
+  return typeof raw === 'string' && raw !== '' && Number.isInteger(remaining) ? remaining : null
+})
 
 const qrCodeDataUrl = computed(() => {
   if (!setup.value) {
@@ -38,11 +54,65 @@ async function loadStatus(): Promise<void> {
 
   try {
     status.value = await getMfaStatus()
+    recoveryCodeStatus.value = status.value.enabled ? await getMfaRecoveryCodeStatus() : null
   } catch (error) {
     errorMessage.value = toMessage(error, '2段階認証の状態取得に失敗しました')
   } finally {
     loading.value = false
   }
+}
+
+async function submitRegenerateRecoveryCodes(): Promise<void> {
+  if (!window.confirm('これまでのリカバリーコードは使えなくなります。再発行しますか？')) {
+    return
+  }
+
+  processing.value = true
+  message.value = null
+  errorMessage.value = null
+
+  try {
+    recoveryCodes.value = (await regenerateMfaRecoveryCodes()).recoveryCodes
+    recoveryCodeStatus.value = await getMfaRecoveryCodeStatus()
+    message.value = 'リカバリーコードを再発行しました'
+    // 再発行で残数が戻るので、リカバリーコードログイン直後の警告は取り下げる
+    if (recoveryLoginRemaining.value !== null) {
+      await router.replace({ name: 'mfa-settings' })
+    }
+  } catch (error) {
+    errorMessage.value = toMessage(error, 'リカバリーコードの再発行に失敗しました')
+  } finally {
+    processing.value = false
+  }
+}
+
+async function copyRecoveryCodes(): Promise<void> {
+  if (!recoveryCodes.value) {
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(recoveryCodes.value.join('\n'))
+    message.value = 'リカバリーコードをコピーしました'
+  } catch {
+    errorMessage.value = 'コピーできませんでした。手動で控えてください'
+  }
+}
+
+function downloadRecoveryCodes(): void {
+  if (!recoveryCodes.value) {
+    return
+  }
+
+  const blob = new Blob([`${recoveryCodes.value.join('\n')}\n`], {
+    type: 'text/plain;charset=utf-8',
+  })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'kakeibo-recovery-codes.txt'
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 async function startSetup(): Promise<void> {
@@ -68,10 +138,11 @@ async function submitEnable(): Promise<void> {
   errorMessage.value = null
 
   try {
-    await enableMfa({ code: code.value })
+    recoveryCodes.value = (await enableMfa({ code: code.value })).recoveryCodes
     setup.value = null
     code.value = ''
     status.value = { enabled: true }
+    recoveryCodeStatus.value = await getMfaRecoveryCodeStatus()
     message.value = '2段階認証を有効にしました'
     await loadCurrentUser()
   } catch (error) {
@@ -101,6 +172,8 @@ async function submitDisable(): Promise<void> {
     code.value = ''
     codeError.value = null
     status.value = { enabled: false }
+    recoveryCodes.value = null
+    recoveryCodeStatus.value = null
     message.value = '2段階認証を無効にしました'
     await loadCurrentUser()
   } catch (error) {
@@ -123,6 +196,12 @@ function toMessage(error: unknown, fallback: string): string {
     </div>
 
     <section class="status-card mfa-settings-form">
+      <p v-if="recoveryLoginRemaining !== null" class="message warning">
+        リカバリーコードでログインしました。残り{{
+          recoveryLoginRemaining
+        }}個です。認証アプリを使えない場合は、2段階認証をいったん無効にしてから新しい端末で登録し直してください。
+      </p>
+
       <p v-if="loading">読み込み中...</p>
 
       <template v-else>
@@ -133,11 +212,31 @@ function toMessage(error: unknown, fallback: string): string {
           </span>
         </p>
 
-        <div v-if="status?.enabled" class="form-actions">
-          <button type="button" class="danger-button" :disabled="processing" @click="submitDisable">
-            無効にする
-          </button>
-        </div>
+        <template v-if="status?.enabled">
+          <p v-if="recoveryCodeStatus" class="mfa-status">
+            リカバリーコード:
+            <span :class="recoveryCodeStatus.remaining > 0 ? 'mfa-enabled' : 'mfa-disabled'">
+              残り{{ recoveryCodeStatus.remaining }}個 / {{ recoveryCodeStatus.total }}個
+            </span>
+          </p>
+
+          <div class="form-actions">
+            <button type="button" :disabled="processing" @click="submitRegenerateRecoveryCodes">
+              リカバリーコードを再発行する
+            </button>
+          </div>
+
+          <div class="form-actions">
+            <button
+              type="button"
+              class="danger-button"
+              :disabled="processing"
+              @click="submitDisable"
+            >
+              無効にする
+            </button>
+          </div>
+        </template>
 
         <template v-else>
           <div v-if="!setup" class="form-actions">
@@ -177,6 +276,26 @@ function toMessage(error: unknown, fallback: string): string {
           </div>
         </template>
       </template>
+
+      <div v-if="recoveryCodes" class="mfa-recovery-codes">
+        <p class="message warning">
+          リカバリーコードは今だけ表示されます。認証アプリを使えなくなったときのログインに使うので、印刷するか安全な場所に保管してください。1つのコードは1回だけ使えます。
+        </p>
+
+        <ul class="mfa-recovery-code-list">
+          <li v-for="recoveryCode in recoveryCodes" :key="recoveryCode">{{ recoveryCode }}</li>
+        </ul>
+
+        <div class="form-actions">
+          <button type="button" class="secondary-button" @click="copyRecoveryCodes">
+            コピーする
+          </button>
+          <button type="button" class="secondary-button" @click="downloadRecoveryCodes">
+            ファイルに保存する
+          </button>
+          <button type="button" @click="recoveryCodes = null">控えたので閉じる</button>
+        </div>
+      </div>
 
       <p v-if="errorMessage" class="message error">{{ errorMessage }}</p>
       <p v-if="message" class="message success">{{ message }}</p>

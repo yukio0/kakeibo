@@ -6,7 +6,9 @@ import jp.yukio0.kakeibo.trusteddevice.TrustedDeviceRepository
 import jp.yukio0.kakeibo.trusteddevice.TrustedDeviceService
 import jp.yukio0.kakeibo.user.AppUserEntity
 import jp.yukio0.kakeibo.user.AppUserRepository
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -41,6 +43,10 @@ class MfaLoginApiTests {
   @Autowired private lateinit var totpService: TotpService
 
   @Autowired private lateinit var trustedDeviceRepository: TrustedDeviceRepository
+
+  @Autowired private lateinit var mfaRecoveryCodeRepository: MfaRecoveryCodeRepository
+
+  @Autowired private lateinit var mfaRecoveryCodeService: MfaRecoveryCodeService
 
   private val mockMvc: MockMvc by lazy {
     MockMvcBuilders.webAppContextSetup(context)
@@ -208,9 +214,124 @@ class MfaLoginApiTests {
       .andExpect(status().isBadRequest)
       .andExpect(content().contentType(MediaType.APPLICATION_JSON))
       .andExpect(jsonPath("$.errors[0].field").value("code"))
-      .andExpect(jsonPath("$.errors[0].message").value("確認コードが正しくありません"))
+      .andExpect(jsonPath("$.errors[0].message").value("確認コードまたはリカバリーコードが正しくありません"))
 
     mockMvc.perform(get("/api/me").session(session)).andExpect(status().isUnauthorized)
+  }
+
+  @Test
+  fun verifyMfaAcceptsRecoveryCodeOnceAndReportsRemainingCount() {
+    val secret = totpService.generateSecret()
+    val username = createTestUser(twoFactorEnabled = true, twoFactorSecret = secret)
+    val appUser = assertNotNull(appUserRepository.findByUsername(username))
+    val recoveryCodes = mfaRecoveryCodeService.issue(appUser)
+    val recoveryCode = recoveryCodes.first()
+
+    val verifiedSession =
+      mockMvc
+        .perform(
+          post("/api/mfa/verify")
+            .session(login(username, expectMfaRequired = true))
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(codeJson(recoveryCode))
+        )
+        .andExpect(status().isOk)
+        .andExpect(jsonPath("$.username").value(username))
+        .andExpect(jsonPath("$.recoveryCodeUsed").value(true))
+        .andExpect(jsonPath("$.remainingRecoveryCodes").value(recoveryCodes.size - 1))
+        .andReturn()
+        .request
+        .session as MockHttpSession
+
+    mockMvc
+      .perform(get("/api/me").session(verifiedSession))
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$.username").value(username))
+
+    // 同じコードは2回使えない
+    mockMvc
+      .perform(
+        post("/api/mfa/verify")
+          .session(login(username, expectMfaRequired = true))
+          .with(csrf())
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(codeJson(recoveryCode))
+      )
+      .andExpect(status().isBadRequest)
+      .andExpect(jsonPath("$.errors[0].message").value("確認コードまたはリカバリーコードが正しくありません"))
+  }
+
+  @Test
+  fun verifyMfaAcceptsRecoveryCodeWithoutHyphenAndInLowercase() {
+    val secret = totpService.generateSecret()
+    val username = createTestUser(twoFactorEnabled = true, twoFactorSecret = secret)
+    val appUser = assertNotNull(appUserRepository.findByUsername(username))
+    val recoveryCode = mfaRecoveryCodeService.issue(appUser).first()
+
+    mockMvc
+      .perform(
+        post("/api/mfa/verify")
+          .session(login(username, expectMfaRequired = true))
+          .with(csrf())
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(codeJson(recoveryCode.replace("-", "").lowercase()))
+      )
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$.recoveryCodeUsed").value(true))
+  }
+
+  @Test
+  fun verifyMfaRejectsRecoveryCodeIssuedForAnotherUser() {
+    val otherUsername =
+      createTestUser(twoFactorEnabled = true, twoFactorSecret = totpService.generateSecret())
+    val otherUser = assertNotNull(appUserRepository.findByUsername(otherUsername))
+    val otherRecoveryCode = mfaRecoveryCodeService.issue(otherUser).first()
+
+    val secret = totpService.generateSecret()
+    val username = createTestUser(twoFactorEnabled = true, twoFactorSecret = secret)
+    val session = login(username, expectMfaRequired = true)
+
+    mockMvc
+      .perform(
+        post("/api/mfa/verify")
+          .session(session)
+          .with(csrf())
+          .contentType(MediaType.APPLICATION_JSON)
+          .content(codeJson(otherRecoveryCode))
+      )
+      .andExpect(status().isBadRequest)
+
+    // 他人のコードを消費してしまわないこと
+    assertEquals(
+      RECOVERY_CODE_COUNT.toLong(),
+      mfaRecoveryCodeRepository.countByAppUserAndUsedAtIsNull(otherUser),
+    )
+  }
+
+  @Test
+  fun recoveryCodeLoginDoesNotCreateTrustedDevice() {
+    val secret = totpService.generateSecret()
+    val username = createTestUser(twoFactorEnabled = true, twoFactorSecret = secret)
+    val appUser = assertNotNull(appUserRepository.findByUsername(username))
+    val recoveryCode = mfaRecoveryCodeService.issue(appUser).first()
+
+    val response =
+      mockMvc
+        .perform(
+          post("/api/mfa/verify")
+            .session(login(username, expectMfaRequired = true))
+            .with(csrf())
+            .header(HttpHeaders.USER_AGENT, "JUnit Browser")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(codeJson(code = recoveryCode, trustDevice = true))
+        )
+        .andExpect(status().isOk)
+        .andReturn()
+        .response
+
+    assertNull(extractTrustedDeviceCookie(response.getHeaders(HttpHeaders.SET_COOKIE)))
+    assertTrue(trustedDeviceRepository.findAllByAppUserOrderByCreatedAtDesc(appUser).isEmpty())
   }
 
   @Test
@@ -370,5 +491,6 @@ class MfaLoginApiTests {
 
   private companion object {
     private const val TEST_PASSWORD = "test-password"
+    private const val RECOVERY_CODE_COUNT = 10
   }
 }

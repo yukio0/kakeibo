@@ -29,6 +29,7 @@ class DatabaseMigrationTests {
             'app_user',
             'categories',
             'category_budgets',
+            'mfa_recovery_codes',
             'monthly_budgets',
             'payment_methods',
             'recurring_transaction_registrations',
@@ -48,7 +49,7 @@ class DatabaseMigrationTests {
     val transferAccountCount =
       jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transfer_accounts", Int::class.java)
 
-    assertEquals(10, tableCount)
+    assertEquals(11, tableCount)
     assertEquals(13, categoryCount)
     assertEquals(4, paymentMethodCount)
     assertEquals(2, transferAccountCount)

@@ -35,6 +35,7 @@ class MfaController(
   private val trustedDeviceService: TrustedDeviceService,
   private val securityFeatureProperties: SecurityFeatureProperties,
   private val authThrottleService: AuthThrottleService,
+  private val mfaRecoveryCodeService: MfaRecoveryCodeService,
 ) {
 
   @GetMapping("/status")
@@ -72,14 +73,14 @@ class MfaController(
     )
   }
 
+  /** 有効化と同時にリカバリーコードを発行する。平文を返すのはこのレスポンスと再発行APIだけ。 */
   @PostMapping("/enable")
-  @ResponseStatus(HttpStatus.NO_CONTENT)
   @Transactional
   fun enable(
     authentication: Authentication?,
     httpRequest: HttpServletRequest,
     @Valid @RequestBody request: MfaCodeRequest,
-  ) {
+  ): MfaRecoveryCodesResponse {
     ensureTwoFactorEnabled()
 
     val appUser = authentication.toAppUser()
@@ -109,15 +110,42 @@ class MfaController(
     appUser.twoFactorSecret = secret
     appUserRepository.save(appUser)
     httpRequest.session.removeAttribute(MfaSessionAttributes.PENDING_SETUP_SECRET)
+
+    return MfaRecoveryCodesResponse(recoveryCodes = mfaRecoveryCodeService.issue(appUser))
   }
 
+  @GetMapping("/recovery-codes")
+  @Transactional(readOnly = true)
+  fun recoveryCodeStatus(authentication: Authentication?): MfaRecoveryCodeStatusResponse {
+    if (!securityFeatureProperties.twoFactorEnabled) {
+      return MfaRecoveryCodeStatusResponse(total = 0, remaining = 0)
+    }
+
+    return mfaRecoveryCodeService.status(authentication.toAppUser())
+  }
+
+  /** 残数が減ったときや控えを失くしたときに、古いコードを破棄して発行し直す。 */
+  @PostMapping("/recovery-codes")
+  @Transactional
+  fun regenerateRecoveryCodes(authentication: Authentication?): MfaRecoveryCodesResponse {
+    ensureTwoFactorEnabled()
+
+    val appUser = authentication.toAppUser()
+    if (!appUser.twoFactorEnabled) {
+      throw BadRequestException("2段階認証を有効にしてください")
+    }
+
+    return MfaRecoveryCodesResponse(recoveryCodes = mfaRecoveryCodeService.issue(appUser))
+  }
+
+  /** TOTPコードに加えて、スマホ紛失時の救済としてリカバリーコードでも通す。 */
   @PostMapping("/verify")
   @Transactional
   fun verify(
     httpRequest: HttpServletRequest,
     httpResponse: HttpServletResponse,
     @Valid @RequestBody request: MfaVerifyRequest,
-  ): AuthUserResponse {
+  ): MfaVerifyResponse {
     ensureTwoFactorEnabled()
 
     val session = httpRequest.getSession(false) ?: throw UnauthorizedException("2段階認証が必要です")
@@ -132,7 +160,15 @@ class MfaController(
     val secret = appUser.twoFactorSecret ?: throw UnauthorizedException("2段階認証が必要です")
     val code = request.code ?: ""
 
-    if (!appUser.twoFactorEnabled || !totpService.isValidCode(secret, code)) {
+    // TOTPコードの形をしていない入力だけリカバリーコードとして照合する
+    val totpAccepted = appUser.twoFactorEnabled && totpService.isValidCode(secret, code)
+    val recoveryCodeUsed =
+      !totpAccepted &&
+        appUser.twoFactorEnabled &&
+        mfaRecoveryCodeService.looksLikeRecoveryCode(code) &&
+        mfaRecoveryCodeService.consume(appUser, code)
+
+    if (!totpAccepted && !recoveryCodeUsed) {
       authThrottleService.recordFailure(throttleKey)
       // ロックに達したら、この pending セッションを無効化してパスワード段からやり直させる
       runCatching { authThrottleService.checkAllowed(throttleKey) }
@@ -146,7 +182,7 @@ class MfaController(
           listOf(
             ApiFieldErrorResponse(
               field = "code",
-              message = "確認コードが正しくありません",
+              message = "確認コードまたはリカバリーコードが正しくありません",
             )
           ),
       )
@@ -166,13 +202,16 @@ class MfaController(
     securityContextRepository.saveContext(securityContext, httpRequest, httpResponse)
     httpRequest.session.removeAttribute(MfaSessionAttributes.PENDING_LOGIN_USERNAME)
 
-    if (request.trustDevice == true) {
+    // リカバリーコードで通した端末は「認証アプリを持っていない端末」なので信頼済みにしない
+    if (request.trustDevice == true && !recoveryCodeUsed) {
       trustedDeviceService.trustCurrentDevice(appUser, httpRequest, httpResponse)
     }
 
-    return AuthUserResponse(
+    return MfaVerifyResponse(
       username = appUser.username,
       twoFactorEnabled = appUser.twoFactorEnabled,
+      recoveryCodeUsed = recoveryCodeUsed,
+      remainingRecoveryCodes = mfaRecoveryCodeService.remaining(appUser),
     )
   }
 
@@ -192,6 +231,8 @@ class MfaController(
     appUser.twoFactorEnabled = false
     appUser.twoFactorSecret = null
     appUserRepository.save(appUser)
+    // 2FAを外したらリカバリーコードも意味を持たないので破棄する
+    mfaRecoveryCodeService.deleteAll(appUser)
     httpRequest.session.removeAttribute(MfaSessionAttributes.PENDING_SETUP_SECRET)
     httpRequest.session.removeAttribute(MfaSessionAttributes.PENDING_LOGIN_USERNAME)
     trustedDeviceService.revokeAllTrustedDevices(appUser, httpResponse)

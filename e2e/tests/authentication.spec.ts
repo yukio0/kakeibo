@@ -37,6 +37,45 @@ test('セッション切れ後の画面遷移でログイン画面を表示す�
   await expect(page.getByRole('heading', { name: 'ログイン', exact: true })).toBeVisible()
 })
 
+test('リカバリーコードでログインし、再発行できる', async ({ page }, testInfo) => {
+  await page.goto('/login')
+  await page.getByLabel('ユーザー名').fill(E2E_USER.username)
+  await page.getByLabel('パスワード').fill(E2E_USER.password)
+  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
+  await expect(page).toHaveURL(/\/mfa\/verify/)
+
+  await page.getByLabel('確認コード').fill(E2E_USER.recoveryCode)
+  await page.getByRole('button', { name: '確認する', exact: true }).click()
+
+  // 使い切ったコードの残数とともに、2FA設定画面へ誘導される
+  await expect(page).toHaveURL(/\/mfa\/settings\?recovery-used=0$/)
+  await expect(page.getByText('リカバリーコードでログインしました。残り0個です。')).toBeVisible()
+  await expect(page.getByText('残り0個 / 1個')).toBeVisible()
+  await saveScreenshot(page, testInfo, 'mfa-recovery-login')
+
+  // 再発行すると平文が一度だけ表示され、残数が戻る
+  page.once('dialog', (dialog) => void dialog.accept())
+  await page.getByRole('button', { name: 'リカバリーコードを再発行する', exact: true }).click()
+  await expect(page.getByText('リカバリーコードを再発行しました')).toBeVisible()
+  await expect(page.locator('.mfa-recovery-code-list li')).toHaveCount(10)
+  await expect(page.getByText('残り10個 / 10個')).toBeVisible()
+  // 残数が戻ったので、リカバリーコードログイン直後の警告は消える
+  await expect(page).toHaveURL(/\/mfa\/settings$/)
+  await expect(page.getByText('リカバリーコードでログインしました')).toBeHidden()
+  await saveScreenshot(page, testInfo, 'mfa-recovery-codes-regenerated')
+
+  // 使用済みのコードでは2回目のログインができない
+  await page.getByRole('button', { name: 'ログアウト', exact: true }).click()
+  await expect(page).toHaveURL(/\/login/)
+  await page.getByLabel('ユーザー名').fill(E2E_USER.username)
+  await page.getByLabel('パスワード').fill(E2E_USER.password)
+  await page.getByRole('button', { name: 'ログイン', exact: true }).click()
+  await page.getByLabel('確認コード').fill(E2E_USER.recoveryCode)
+  await page.getByRole('button', { name: '確認する', exact: true }).click()
+
+  await expect(page.getByText('確認コードまたはリカバリーコードが正しくありません')).toBeVisible()
+})
+
 test('信頼済み端末では2FA入力を省略する', async ({ page }, testInfo) => {
   await page.goto('/login')
   await page.getByLabel('ユーザー名').fill(E2E_USER.username)
@@ -49,7 +88,7 @@ test('信頼済み端末では2FA入力を省略する', async ({ page }, testIn
 
   await page.getByLabel('確認コード').fill('000000')
   await page.getByRole('button', { name: '確認する', exact: true }).click()
-  await expect(page.getByText('確認コードが正しくありません')).toBeVisible()
+  await expect(page.getByText('確認コードまたはリカバリーコードが正しくありません')).toBeVisible()
 
   await page.getByLabel('確認コード').fill(generateTotp(E2E_USER.totpSecret))
   await page.getByRole('button', { name: '確認する', exact: true }).click()

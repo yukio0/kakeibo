@@ -24,7 +24,15 @@ async function submitVerify(): Promise<void> {
   errorMessage.value = null
 
   try {
-    await verifyMfa(code.value, trustDevice.value)
+    const result = await verifyMfa(code.value.trim(), trustDevice.value)
+    if (result.recoveryCodeUsed) {
+      // 認証アプリを使えない状態でのログイン。再設定へ誘導する。
+      await router.replace({
+        name: 'mfa-settings',
+        query: { 'recovery-used': String(result.remainingRecoveryCodes) },
+      })
+      return
+    }
     await router.replace(redirectPath.value)
   } catch (error) {
     if (error instanceof ApiError) {
@@ -56,13 +64,14 @@ async function submitVerify(): Promise<void> {
         <input
           v-model="code"
           type="text"
-          inputmode="numeric"
           autocomplete="one-time-code"
-          maxlength="6"
-          pattern="[0-9]{6}"
-          required
+          maxlength="11"
           :disabled="submitting"
+          required
         />
+        <small class="field-hint">
+          認証アプリを使えない場合は、リカバリーコード（例: ABCDE-FGHJK）を入力してください。
+        </small>
         <small v-if="codeError" class="field-error">{{ codeError }}</small>
       </label>
 

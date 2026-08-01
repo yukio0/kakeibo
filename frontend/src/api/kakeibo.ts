@@ -255,6 +255,21 @@ export type MfaVerifyRequest = {
   trustDevice: boolean
 }
 
+// 平文のリカバリーコードを受け取れるのは発行直後だけ。以後はサーバも残数しか返さない。
+export type MfaRecoveryCodes = {
+  recoveryCodes: string[]
+}
+
+export type MfaRecoveryCodeStatus = {
+  total: number
+  remaining: number
+}
+
+export type MfaVerifyResult = AuthUser & {
+  recoveryCodeUsed: boolean
+  remainingRecoveryCodes: number
+}
+
 export type TrustedDevice = {
   id: number
   deviceName: string
@@ -305,15 +320,15 @@ export function setupMfa(): Promise<MfaSetup> {
   return apiRequest<MfaSetup>('/api/mfa/setup')
 }
 
-export function enableMfa(request: MfaCodeRequest): Promise<void> {
-  return apiRequest<void>('/api/mfa/enable', {
+export function enableMfa(request: MfaCodeRequest): Promise<MfaRecoveryCodes> {
+  return apiRequest<MfaRecoveryCodes>('/api/mfa/enable', {
     method: 'POST',
     body: request,
   })
 }
 
-export function verifyMfa(request: MfaVerifyRequest): Promise<AuthUser> {
-  return apiRequest<AuthUser>('/api/mfa/verify', {
+export function verifyMfa(request: MfaVerifyRequest): Promise<MfaVerifyResult> {
+  return apiRequest<MfaVerifyResult>('/api/mfa/verify', {
     method: 'POST',
     body: request,
   })
@@ -321,6 +336,16 @@ export function verifyMfa(request: MfaVerifyRequest): Promise<AuthUser> {
 
 export function disableMfa(): Promise<void> {
   return apiRequest<void>('/api/mfa/disable', {
+    method: 'POST',
+  })
+}
+
+export function getMfaRecoveryCodeStatus(): Promise<MfaRecoveryCodeStatus> {
+  return apiRequest<MfaRecoveryCodeStatus>('/api/mfa/recovery-codes')
+}
+
+export function regenerateMfaRecoveryCodes(): Promise<MfaRecoveryCodes> {
+  return apiRequest<MfaRecoveryCodes>('/api/mfa/recovery-codes', {
     method: 'POST',
   })
 }

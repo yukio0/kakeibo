@@ -39,6 +39,8 @@ class MfaApiTests {
 
   @Autowired private lateinit var totpService: TotpService
 
+  @Autowired private lateinit var mfaRecoveryCodeRepository: MfaRecoveryCodeRepository
+
   private val mockMvc: MockMvc by lazy {
     MockMvcBuilders.webAppContextSetup(context)
       .apply<DefaultMockMvcBuilder>(springSecurity())
@@ -104,7 +106,8 @@ class MfaApiTests {
           .contentType(MediaType.APPLICATION_JSON)
           .content(codeJson(code))
       )
-      .andExpect(status().isNoContent)
+      .andExpect(status().isOk)
+      .andExpect(jsonPath("$.recoveryCodes.length()").value(RECOVERY_CODE_COUNT))
 
     val appUser = appUserRepository.findByUsername(username)
     assertNotNull(appUser)
@@ -161,6 +164,85 @@ class MfaApiTests {
   }
 
   @Test
+  fun enableIssuesRecoveryCodesAsHashesOnly() {
+    val username = createTestUser()
+    val session = login(username)
+    val secret = setup(session)
+
+    val recoveryCodes = enable(session, totpService.generateCode(secret))
+
+    assertEquals(RECOVERY_CODE_COUNT, recoveryCodes.size)
+    assertEquals(RECOVERY_CODE_COUNT, recoveryCodes.distinct().size)
+    recoveryCodes.forEach { assertTrue(it.matches(RECOVERY_CODE_FORMAT)) }
+
+    val appUser = assertNotNull(appUserRepository.findByUsername(username))
+    val storedCodes = mfaRecoveryCodeRepository.findAllByAppUserAndUsedAtIsNullOrderByIdAsc(appUser)
+    assertEquals(RECOVERY_CODE_COUNT, storedCodes.size)
+    // 平文はDBに残さず、照合できるハッシュだけを保存する
+    val plainCodes = recoveryCodes.map { it.replace("-", "") }
+    storedCodes.forEach { stored ->
+      assertFalse(plainCodes.contains(stored.codeHash))
+      assertTrue(plainCodes.any { passwordEncoder.matches(it, stored.codeHash) })
+    }
+  }
+
+  @Test
+  fun recoveryCodeStatusReportsRemainingCount() {
+    val username = createTestUser()
+    val session = login(username)
+    val secret = setup(session)
+    enable(session, totpService.generateCode(secret))
+
+    mockMvc
+      .perform(get("/api/mfa/recovery-codes").session(session))
+      .andExpect(status().isOk)
+      .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+      .andExpect(jsonPath("$.total").value(RECOVERY_CODE_COUNT))
+      .andExpect(jsonPath("$.remaining").value(RECOVERY_CODE_COUNT))
+  }
+
+  @Test
+  fun regenerateReplacesPreviousRecoveryCodes() {
+    val username = createTestUser()
+    val session = login(username)
+    val secret = setup(session)
+    val firstCodes = enable(session, totpService.generateCode(secret))
+
+    val responseBody =
+      mockMvc
+        .perform(post("/api/mfa/recovery-codes").session(session).with(csrf()))
+        .andExpect(status().isOk)
+        .andExpect(jsonPath("$.recoveryCodes.length()").value(RECOVERY_CODE_COUNT))
+        .andReturn()
+        .response
+        .contentAsString
+    val secondCodes = extractRecoveryCodes(responseBody)
+
+    assertTrue(firstCodes.intersect(secondCodes.toSet()).isEmpty())
+
+    val appUser = assertNotNull(appUserRepository.findByUsername(username))
+    val storedCodes = mfaRecoveryCodeRepository.findAllByAppUserAndUsedAtIsNullOrderByIdAsc(appUser)
+    assertEquals(RECOVERY_CODE_COUNT, storedCodes.size)
+    // 古いコードは1つも残さない
+    firstCodes.forEach { oldCode ->
+      assertFalse(
+        storedCodes.any { passwordEncoder.matches(oldCode.replace("-", ""), it.codeHash) }
+      )
+    }
+  }
+
+  @Test
+  fun regenerateRejectsUsersWithoutTwoFactor() {
+    val username = createTestUser()
+    val session = login(username)
+
+    mockMvc
+      .perform(post("/api/mfa/recovery-codes").session(session).with(csrf()))
+      .andExpect(status().isBadRequest)
+      .andExpect(jsonPath("$.message").value("2段階認証を有効にしてください"))
+  }
+
+  @Test
   fun disableClearsSecret() {
     val username = createTestUser(twoFactorEnabled = true, twoFactorSecret = "ABCDEFGHIJKLMNOP")
     val session = login(username)
@@ -173,6 +255,21 @@ class MfaApiTests {
     assertNotNull(appUser)
     assertFalse(appUser.twoFactorEnabled)
     assertNull(appUser.twoFactorSecret)
+  }
+
+  @Test
+  fun disableDiscardsRecoveryCodes() {
+    val username = createTestUser()
+    val session = login(username)
+    val secret = setup(session)
+    enable(session, totpService.generateCode(secret))
+
+    mockMvc
+      .perform(post("/api/mfa/disable").session(session).with(csrf()))
+      .andExpect(status().isNoContent)
+
+    val appUser = assertNotNull(appUserRepository.findByUsername(username))
+    assertEquals(0, mfaRecoveryCodeRepository.countByAppUser(appUser))
   }
 
   @Test
@@ -189,6 +286,28 @@ class MfaApiTests {
       )
       .andExpect(status().isForbidden)
   }
+
+  private fun enable(session: MockHttpSession, code: String): List<String> {
+    val responseBody =
+      mockMvc
+        .perform(
+          post("/api/mfa/enable")
+            .session(session)
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(codeJson(code))
+        )
+        .andExpect(status().isOk)
+        .andReturn()
+        .response
+        .contentAsString
+    return extractRecoveryCodes(responseBody)
+  }
+
+  private fun extractRecoveryCodes(json: String): List<String> =
+    Regex(""""recoveryCodes"\s*:\s*\[([^\]]*)]""").find(json)?.groupValues?.get(1)?.let { array ->
+      Regex(""""([^"]+)"""").findAll(array).map { it.groupValues[1] }.toList()
+    } ?: error("recoveryCodes is not found")
 
   private fun setup(session: MockHttpSession): String {
     val responseBody =
@@ -273,5 +392,8 @@ class MfaApiTests {
 
   private companion object {
     private const val TEST_PASSWORD = "test-password"
+    private const val RECOVERY_CODE_COUNT = 10
+    // 見間違えやすい 0/1/I/L/O を含まない英数字10文字を、中央でハイフン区切りにした形
+    private val RECOVERY_CODE_FORMAT = Regex("[2-9A-HJKMNP-Z]{5}-[2-9A-HJKMNP-Z]{5}")
   }
 }
