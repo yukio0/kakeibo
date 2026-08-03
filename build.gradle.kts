@@ -9,6 +9,7 @@ plugins {
 
 val e2eRuntimeOnly = configurations.create("e2eRuntimeOnly")
 val e2eDirectory = layout.projectDirectory.dir("e2e")
+val frontendDirectory = layout.projectDirectory.dir("frontend")
 val npmExecutable =
   if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) "npm.cmd" else "npm"
 
@@ -49,6 +50,48 @@ tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
   classpath = classpath + e2eRuntimeOnly
 }
 
+// E2EはPlaywrightがViteの開発サーバーを起動するため、frontend側の依存も揃っている必要がある。
+// 依存を持たない新しい環境(開発用コンテナなど)でも e2eTest だけで完結させる。
+val frontendInstall =
+  tasks.register<Exec>("frontendInstall") {
+    group = "build"
+    description = "フロントエンドのnpm依存関係をインストールします。"
+    workingDir(frontendDirectory)
+    commandLine(npmExecutable, "ci")
+    inputs.files(
+      frontendDirectory.file("package.json"),
+      frontendDirectory.file("package-lock.json"),
+    )
+    outputs.dir(frontendDirectory.dir("node_modules"))
+  }
+
+// 型検査とlintの入力。生成物は除く。node_modules を含めると入力の走査だけで時間がかかり、
+// 型検査が書き出す tsbuildinfo(node_modules/.tmp/) で自分自身が毎回古い扱いになる。
+val frontendSources =
+  fileTree(frontendDirectory) {
+    exclude("node_modules/**", "dist/**")
+  }
+
+tasks.register<Exec>("frontendTypecheck") {
+  group = "verification"
+  description = "フロントエンドの型検査(vue-tsc)を実行します。"
+  dependsOn(frontendInstall)
+  workingDir(frontendDirectory)
+  commandLine(npmExecutable, "run", "typecheck")
+  inputs.files(frontendSources)
+  outputs.upToDateWhen { true }
+}
+
+tasks.register<Exec>("frontendLint") {
+  group = "verification"
+  description = "フロントエンドをeslintで静的解析します。"
+  dependsOn(frontendInstall)
+  workingDir(frontendDirectory)
+  commandLine(npmExecutable, "run", "lint")
+  inputs.files(frontendSources)
+  outputs.upToDateWhen { true }
+}
+
 val e2eInstall =
   tasks.register<Exec>("e2eInstall") {
     group = "verification"
@@ -73,13 +116,15 @@ val e2eInstallBrowsers =
 tasks.register<Exec>("e2eTest") {
   group = "verification"
   description = "PlaywrightでE2Eテストを実行します。"
-  dependsOn(e2eInstallBrowsers)
+  dependsOn(e2eInstallBrowsers, frontendInstall)
   workingDir(e2eDirectory)
   commandLine(npmExecutable, "run", "test")
 }
 
-// shellcheck / shfmt は公式Dockerイメージで実行する。
+// shellcheck / shfmt はホストでは公式Dockerイメージで実行する。
 // タグでバージョンを固定して再現性を確保する。実行には Docker が起動している必要がある。
+// 開発用コンテナの中では KAKEIBO_SHELLCHECK_COMMAND / KAKEIBO_SHFMT_COMMAND が設定され、
+// 同じバージョンの同梱バイナリを直接使うためDockerは不要になる。
 val shellcheckImage = "koalaman/shellcheck:v0.10.0"
 val shfmtImage = "mvdan/shfmt:v3.10.0"
 // インデント2スペース(既存スクリプト・プロジェクトに合わせる) / case を字下げ / 二項演算子を行頭に置く
@@ -95,10 +140,21 @@ val shellScriptFiles =
 fun dockerRun(vararg command: String): List<String> =
   listOf("docker", "run", "--rm", "-v", "$projectDir:/work", "-w", "/work") + command
 
+// 開発用コンテナ(Dockerfile.dev)の中では、同じバージョンのバイナリを同梱しているので直接実行する。
+// コンテナの中からさらに docker run を呼ぶと、-v のソースをホスト視点のパスで渡す必要があり成立しない。
+val shellcheckCommand: String? = System.getenv("KAKEIBO_SHELLCHECK_COMMAND")
+val shfmtCommand: String? = System.getenv("KAKEIBO_SHFMT_COMMAND")
+
+fun runShellcheck(vararg args: String): List<String> =
+  shellcheckCommand?.let { listOf(it) + args } ?: dockerRun(shellcheckImage, *args)
+
+fun runShfmt(vararg args: String): List<String> =
+  shfmtCommand?.let { listOf(it) + args } ?: dockerRun(shfmtImage, *args)
+
 tasks.register<Exec>("shellcheck") {
   group = "verification"
   description = "shellcheck でシェルスクリプトを静的解析します。"
-  commandLine(dockerRun(shellcheckImage, *shellScriptFiles.toTypedArray()))
+  commandLine(runShellcheck(*shellScriptFiles.toTypedArray()))
   inputs.files(shellScriptFiles.map { file(it) })
   outputs.upToDateWhen { true }
 }
@@ -106,7 +162,7 @@ tasks.register<Exec>("shellcheck") {
 tasks.register<Exec>("shfmtCheck") {
   group = "verification"
   description = "shfmt でシェルスクリプトの整形崩れを検出します(差分があれば失敗)。"
-  commandLine(dockerRun(shfmtImage, "-d", *shfmtArgs, shellScriptsDir))
+  commandLine(runShfmt("-d", *shfmtArgs, shellScriptsDir))
   inputs.files(shellScriptFiles.map { file(it) })
   outputs.upToDateWhen { true }
 }
@@ -114,11 +170,11 @@ tasks.register<Exec>("shfmtCheck") {
 tasks.register<Exec>("shfmtApply") {
   group = "verification"
   description = "shfmt でシェルスクリプトを整形します。"
-  commandLine(dockerRun(shfmtImage, "-w", *shfmtArgs, shellScriptsDir))
+  commandLine(runShfmt("-w", *shfmtArgs, shellScriptsDir))
 }
 
 tasks.named("check") {
-  dependsOn("shellcheck", "shfmtCheck")
+  dependsOn("shellcheck", "shfmtCheck", "frontendTypecheck", "frontendLint")
 }
 
 tasks.register("verifyAll") {
@@ -142,6 +198,10 @@ tasks.named("shfmtCheck") { mustRunAfter("shfmtApply") }
 tasks.named("shellcheck") { mustRunAfter("shfmtCheck") }
 
 tasks.named("compileKotlin") { mustRunAfter("spotlessApply") }
+
+tasks.named("frontendTypecheck") { mustRunAfter("spotlessApply") }
+
+tasks.named("frontendLint") { mustRunAfter("spotlessApply") }
 
 tasks.named("processResources") { mustRunAfter("spotlessApply") }
 

@@ -375,7 +375,7 @@ class BudgetApiTests {
     assertEquals(4_000L, response.path("overAmount").asLong())
 
     val foodBudget = categoryBudget(response, requireId(foodCategory))
-    assertEquals("Budget food", foodBudget.path("categoryName").textValue())
+    assertEquals("Budget food", foodBudget.path("categoryName").stringValue())
     assertEquals(10_000L, foodBudget.path("budgetAmount").asLong())
     assertEquals(7_000L, foodBudget.path("spentAmount").asLong())
     assertEquals(3_000L, foodBudget.path("remainingAmount").asLong())

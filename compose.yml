@@ -48,5 +48,42 @@ services:
       postgres:
         condition: service_healthy
 
+  # 開発・検証用のツールチェーン。profiles により docker compose up では起動しない。
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    profiles:
+      - dev
+    init: true
+    working_dir: /workspace
+    # docker compose run では既定でポートを公開しない。開発サーバーを見たいときだけ
+    # --service-ports を付ける。その場合 backend と APP_PORT が衝突するので同時には起動しない。
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+      - "127.0.0.1:${VITE_PORT:-5173}:5173"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:?Set DB_NAME in .env}
+      DB_USER: ${DB_USER:?Set DB_USER in .env}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      KAKEIBO_AUTHENTICATION_ENABLED: ${KAKEIBO_AUTHENTICATION_ENABLED:-true}
+      KAKEIBO_TWO_FACTOR_ENABLED: ${KAKEIBO_TWO_FACTOR_ENABLED:-true}
+      KAKEIBO_INITIAL_USERNAME: ${KAKEIBO_INITIAL_USERNAME:-}
+      KAKEIBO_INITIAL_PASSWORD: ${KAKEIBO_INITIAL_PASSWORD:-}
+    volumes:
+      - .:/workspace
+      # 以下はバインドマウントの外に置く。ホストと共有すると遅く、OS差でも壊れやすい。
+      - dev_gradle:/gradle
+      # プロジェクト内のGradleキャッシュは絶対パスを持つため、ホストと共有すると食い違う。
+      - dev_project_gradle:/workspace/.gradle
+      - dev_frontend_node_modules:/workspace/frontend/node_modules
+      - dev_e2e_node_modules:/workspace/e2e/node_modules
+
 volumes:
   postgres_data:
+  dev_gradle:
+  dev_project_gradle:
+  dev_frontend_node_modules:
+  dev_e2e_node_modules:

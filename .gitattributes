@@ -1,3 +1,6 @@
+# 行末はLFに統一する。ホスト(Windows)とコンテナ(Linux)の両方でSpotlessの判定を一致させるために必要。
+# text=auto なのでバイナリは自動判定で除外される。
+* text=auto eol=lf
 /gradlew text eol=lf
 *.bat text eol=crlf
 *.jar binary

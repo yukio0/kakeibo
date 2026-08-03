@@ -234,10 +234,18 @@ test('定期取引: 当月分を確認して既存取引を残したまま一括
 test('定期取引: 標準金額が空のテンプレートを画面から登録・更新・削除する', async ({ page }) => {
   await page.getByRole('link', { name: '定期取引', exact: true }).click()
 
-  await page.getByLabel('テンプレート名', { exact: true }).fill('インターネット料金')
-  await page.getByLabel('毎月の日', { exact: true }).fill('15')
-  await expect(page.getByLabel('標準金額', { exact: true })).toHaveValue('')
-  await page.getByRole('button', { name: '登録', exact: true }).click()
+  // 「登録」ボタンは家計簿入力画面にもあるため、追加フォームの中へ絞り込む。絞り込まないと
+  // 画面遷移の完了前に前の画面のボタンへマッチしてしまう。
+  // またマスタの読み込みが終わると追加フォームは初期化されるので、読み込み中は無効に
+  // なっているこのボタンが押せるようになるまで待ってから入力する。
+  const createSection = page.getByRole('region', { name: 'テンプレートを追加' })
+  const createButton = createSection.getByRole('button', { name: '登録', exact: true })
+  await expect(createButton).toBeEnabled()
+
+  await createSection.getByLabel('テンプレート名', { exact: true }).fill('インターネット料金')
+  await createSection.getByLabel('毎月の日', { exact: true }).fill('15')
+  await expect(createSection.getByLabel('標準金額', { exact: true })).toHaveValue('')
+  await createButton.click()
   await expect(
     page.getByText('定期取引テンプレート「インターネット料金」を登録しました', {
       exact: true,

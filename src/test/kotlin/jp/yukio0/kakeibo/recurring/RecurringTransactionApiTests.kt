@@ -84,7 +84,7 @@ class RecurringTransactionApiTests {
         )
       )
     val expenseId = expenseResponse.path("id").asLong()
-    assertEquals("Rent", expenseResponse.path("name").textValue())
+    assertEquals("Rent", expenseResponse.path("name").stringValue())
     assertEquals(80_000, expenseResponse.path("defaultAmount").asInt())
 
     val incomeResponse =
@@ -114,9 +114,9 @@ class RecurringTransactionApiTests {
     )
 
     val list = getJson("/api/recurring-templates")
-    assertEquals("Salary", list.path(0).path("name").textValue())
-    assertEquals("Asset transfer", list.path(1).path("name").textValue())
-    assertEquals("Rent", list.path(2).path("name").textValue())
+    assertEquals("Salary", list.path(0).path("name").stringValue())
+    assertEquals("Asset transfer", list.path(1).path("name").stringValue())
+    assertEquals("Rent", list.path(2).path("name").stringValue())
 
     mockMvc
       .perform(
@@ -222,12 +222,12 @@ class RecurringTransactionApiTests {
 
     val commonYear = candidates(2091, 2)
     assertEquals(1, commonYear.path("items").size())
-    assertEquals("Month end", commonYear.path("items").path(0).path("templateName").textValue())
-    assertEquals("2091-02-28", commonYear.path("items").path(0).path("date").textValue())
+    assertEquals("Month end", commonYear.path("items").path(0).path("templateName").stringValue())
+    assertEquals("2091-02-28", commonYear.path("items").path(0).path("date").stringValue())
     assertTrue(commonYear.path("items").path(0).path("amount").isNull)
 
     val leapYear = candidates(2092, 2)
-    assertEquals("2092-02-29", leapYear.path("items").path(0).path("date").textValue())
+    assertEquals("2092-02-29", leapYear.path("items").path(0).path("date").stringValue())
   }
 
   @Test
@@ -497,13 +497,13 @@ class RecurringTransactionApiTests {
     assertEquals(LocalDate.of(2096, 5, 10), past.transactionDate)
     val registered = candidates(2096, 5).path("items").path(0)
     assertTrue(registered.path("registered").asBoolean())
-    assertEquals("2096-05-10", registered.path("date").textValue())
+    assertEquals("2096-05-10", registered.path("date").stringValue())
     assertEquals(1_000, registered.path("amount").asInt())
-    assertEquals("old memo", registered.path("memo").textValue())
+    assertEquals("old memo", registered.path("memo").stringValue())
     val next = candidates(2096, 6).path("items").path(0)
-    assertEquals("2096-06-20", next.path("date").textValue())
+    assertEquals("2096-06-20", next.path("date").stringValue())
     assertEquals(2_000, next.path("amount").asInt())
-    assertEquals("new memo", next.path("memo").textValue())
+    assertEquals("new memo", next.path("memo").stringValue())
   }
 
   @Test

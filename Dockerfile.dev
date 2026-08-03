@@ -1,0 +1,60 @@
+# 開発・検証用のツールチェーンをまとめたイメージ。
+# アプリの実行イメージ(Dockerfile)とは別物で、ソースはビルド時に取り込まず compose のバインドマウントで渡す。
+# ホストに必要なものを Docker と git だけにするのが目的。
+FROM eclipse-temurin:21-jdk-noble
+
+# 再現性のため、ツールはすべてバージョンを固定する。
+# Playwright は e2e/package-lock.json で解決されるバージョンと必ず一致させること。
+ARG NODE_MAJOR=24
+ARG PLAYWRIGHT_VERSION=1.61.1
+ARG SHELLCHECK_VERSION=0.10.0
+ARG SHFMT_VERSION=3.10.0
+ARG TARGETARCH=amd64
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl gnupg git xz-utils \
+  && rm -rf /var/lib/apt/lists/*
+
+# Node.js は NodeSource から入れる。Vite、eslint、vue-tsc、Playwright、
+# さらに Spotless の prettier ステップ(gradlew check から呼ばれる)が使う。
+RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
+  && apt-get install -y --no-install-recommends nodejs \
+  && rm -rf /var/lib/apt/lists/*
+
+# shellcheck / shfmt は、ホストでは公式Dockerイメージ経由で実行している。
+# このイメージの中では Docker を使えないので、同じバージョンのバイナリを直接入れる。
+RUN set -eux; \
+  case "${TARGETARCH}" in \
+  amd64) shellcheck_arch="x86_64" ;; \
+  arm64) shellcheck_arch="aarch64" ;; \
+  *) echo "未対応のアーキテクチャ: ${TARGETARCH}" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.${shellcheck_arch}.tar.xz" \
+  | tar -xJ -C /tmp; \
+  install -m 0755 "/tmp/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck; \
+  rm -rf "/tmp/shellcheck-v${SHELLCHECK_VERSION}"; \
+  curl -fsSL -o /usr/local/bin/shfmt "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${TARGETARCH}"; \
+  chmod 0755 /usr/local/bin/shfmt; \
+  shellcheck --version; \
+  shfmt --version
+
+# ブラウザ本体と依存ライブラリをイメージに焼き込む。実行時のダウンロードをなくすため、
+# 置き場所を PLAYWRIGHT_BROWSERS_PATH で固定する。
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+RUN npx --yes "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium \
+  && rm -rf /var/lib/apt/lists/* /root/.npm
+
+# build.gradle.kts はこの2つが設定されていればDockerを介さず直接コマンドを実行する。
+ENV KAKEIBO_SHELLCHECK_COMMAND=shellcheck \
+  KAKEIBO_SHFMT_COMMAND=shfmt
+
+# Gradleのキャッシュは名前付きボリュームへ逃がす。バインドマウント上に置くと目に見えて遅くなる。
+ENV GRADLE_USER_HOME=/gradle
+
+WORKDIR /workspace
+
+# gradlew はバインドマウント越しに実行するため、実行ビット無しでも動くよう sh 経由で呼べるようにしておく。
+CMD ["bash"]
