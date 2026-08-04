@@ -1,4 +1,10 @@
-import { expect, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
+import {
+  expect,
+  type APIRequestContext,
+  type Locator,
+  type Page,
+  type TestInfo,
+} from '@playwright/test'
 import { E2E_USER } from './credentials'
 import { generateTotp } from './totp'
 
@@ -38,6 +44,20 @@ export async function loginThroughMfa(page: Page, trustDevice = false): Promise<
 export async function saveScreenshot(page: Page, testInfo: TestInfo, name: string): Promise<void> {
   const path = testInfo.outputPath(`${name}.png`)
   await page.screenshot({ path, fullPage: true })
+  await testInfo.attach(name, {
+    path,
+    contentType: 'image/png',
+  })
+}
+
+/** 要素だけを切り出して保存する。画面全体では小さくて確認しづらいものに使う。 */
+export async function saveElementScreenshot(
+  locator: Locator,
+  testInfo: TestInfo,
+  name: string,
+): Promise<void> {
+  const path = testInfo.outputPath(`${name}.png`)
+  await locator.screenshot({ path })
   await testInfo.attach(name, {
     path,
     contentType: 'image/png',

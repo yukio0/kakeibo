@@ -9,18 +9,23 @@ import org.springframework.stereotype.Service
 @Service
 class QrCodeService {
 
+  /**
+   * QRコードをSVGとして返す。
+   *
+   * 幅・高さに0を渡してモジュール1つ=1単位の最小行列を作り、拡大はviewBoxとCSSに任せる。 ピクセル単位で描くとパスがモジュール数の数十倍に膨らみ、SVGが数百KBになる。
+   */
   fun toSvg(content: String): String {
     val matrix =
       QRCodeWriter()
         .encode(
           content,
           BarcodeFormat.QR_CODE,
-          QR_CODE_SIZE,
-          QR_CODE_SIZE,
+          0,
+          0,
           mapOf(
             EncodeHintType.CHARACTER_SET to "UTF-8",
             EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M,
-            EncodeHintType.MARGIN to QR_CODE_MARGIN,
+            EncodeHintType.MARGIN to QUIET_ZONE_MODULES,
           ),
         )
 
@@ -43,7 +48,8 @@ class QrCodeService {
   }
 
   private companion object {
-    private const val QR_CODE_SIZE = 240
-    private const val QR_CODE_MARGIN = 2
+    // 静粛領域(quiet zone)はモジュール数で指定する。QRの仕様が推奨する4モジュールを確保する。
+    // 以前はピクセル単位の2で、モジュール換算では0.5未満しかなく読み取りに不利だった。
+    private const val QUIET_ZONE_MODULES = 4
   }
 }
